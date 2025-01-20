@@ -1,10 +1,7 @@
 #undef SAVE_RESULTS		// <- Whether to save bounds to file
-#define CANON__MBDOE_SHOW_APPORTION
-//#define MC__MBDOE_SETUP_DEBUG
-//#define MC__MBDOE_SAMPLE_DEBUG
-//#define MC__NLPSLV_SNOPT_DEBUG_CALLBACK
+#define MAGNUS__EXPDES_SHOW_APPORTION
 
-#include "mbdoeslv.hpp"
+#include "expdes.hpp"
 
 ////////////////////////////////////////////////////////////////////////
 int main()
@@ -163,9 +160,9 @@ int main()
     YVAR[k+3] = 5.0e-2;
   }
   
-  mc::MBDOESLV DOE;
-  DOE.options.CRITERION = mc::MBDOESLV::DOPT;//BROPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;//AVERSE;//
+  mc::EXPDES DOE;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
   DOE.options.CVARTHRES = 0.25;
   DOE.options.UNCREDUC  = 1e-3;//-20;
   DOE.options.FIMSTOL   = 1e-5;
@@ -214,18 +211,18 @@ int main()
   //return 0;
 
   DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) );//, PSCA );
-  DOE.options.CRITERION = mc::MBDOESLV::BROPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;
+  DOE.options.CRITERION = mc::EXPDES::BRISK;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();
-  DOE.evaluate_design( campaign, "BROPT" );
+  DOE.evaluate_design( campaign, "BRISK" );
   
-  DOE.options.CRITERION = mc::MBDOESLV::DOPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-NEUTRAL" );
 
-  DOE.options.CRITERION = mc::MBDOESLV::DOPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::AVERSE;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;
+  DOE.options.RISK      = mc::EXPDES::Options::AVERSE;
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-AVERSE" );
 

@@ -5,7 +5,7 @@ include $(srcpath)/makeoptions.mk
 
 #####
 
-incobjs = ffdoe.hpp base_expdes.hpp expdes.hpp
+incobjs = ffdoe.hpp base_mbdoe.hpp expdes.hpp modiscr.hpp
 binobjs = 
 libobjs = 
 

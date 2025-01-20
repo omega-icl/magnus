@@ -1,9 +1,7 @@
 #undef SAVE_RESULTS		// <- Whether to save bounds to file
-#define MC__MBDOE_SHOW_APPORTION
-//#define MC__MBDOE_SETUP_DEBUG
-//#define MC__MBDOE_SAMPLE_DEBUG
+#define MAGNUS__EXPDES_SHOW_APPORTION
 
-#include "mbdoeslv.hpp"
+#include "expdes.hpp"
 
 ////////////////////////////////////////////////////////////////////////
 int main()
@@ -53,7 +51,7 @@ int main()
     mc::FFVar& d = C[i]; C[i].set("d");
     mc::FFVar r = p1 * y2 / ( p2 + y2 );
     RHS[i][0]   = ( r - d - p4 ) * y1;
-    RHS[i][1] = -r * y1 / p3 + d * ( y2in - y2 );
+    RHS[i][1]   = -r * y1 / p3 + d * ( y2in - y2 );
   }
   
   std::vector<mc::FFVar> IC( NX );   // Initial value function
@@ -144,9 +142,9 @@ int main()
   // Output variance
   std::vector<double> YVAR( NY*NS, 4e-2 );
 
-  mc::MBDOESLV DOE;
-  DOE.options.CRITERION = mc::MBDOESLV::BROPT;//BROPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;//AVERSE;//
+  mc::EXPDES DOE;
+  DOE.options.CRITERION = mc::EXPDES::BRISK;//DOPT;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
   DOE.options.CVARTHRES = 0.25;
   DOE.options.UNCREDUC  = 1e-3;
   DOE.options.DISPLEVEL = 1;
@@ -181,20 +179,20 @@ int main()
   auto campaign = DOE.campaign();
 
   DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
-  DOE.options.CRITERION = mc::MBDOESLV::DOPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-NEUTRAL" );
 
-  DOE.options.CRITERION = mc::MBDOESLV::DOPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::AVERSE;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;
+  DOE.options.RISK      = mc::EXPDES::Options::AVERSE;
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-AVERSE" );
 
-  DOE.options.CRITERION = mc::MBDOESLV::BROPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;
+  DOE.options.CRITERION = mc::EXPDES::BRISK;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();
-  DOE.evaluate_design( campaign, "BROPT" );
+  DOE.evaluate_design( campaign, "BRISK" );
 
   return 0;
 

@@ -1,6 +1,5 @@
 #undef SAVE_RESULTS		// <- Whether to save bounds to file
-//#define MC__EXPDES_SETUP_DEBUG
-//#define MC__EXPDES_SAMPLE_DEBUG
+#define MAGNUS__EXPDES_SHOW_APPORTION
 
 #include "expdes.hpp"
 

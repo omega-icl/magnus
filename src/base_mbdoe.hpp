@@ -2,10 +2,10 @@
 // All Rights Reserved.
 // This code is published under the Eclipse Public License.
 
-#ifndef CANON__BASE_EXPDES_HPP
-#define CANON__BASE_EXPDES_HPP
+#ifndef CANON__BASE_MBDOE_HPP
+#define CANON__BASE_MBDOE_HPP
 
-#undef  CANON__DEBUG__BASE_EXPDES
+#undef  CANON__DEBUG__BASE_MBDOE
 
 #include <assert.h>
 
@@ -21,16 +21,19 @@ namespace mc
 {
 //! @brief C++ base class for defining of model-based design of experiment problems
 ////////////////////////////////////////////////////////////////////////
-//! mc::BASE_EXPDES is a C++ base class for defining the controls,
+//! mc::BASE_MBDOE is a C++ base class for defining the controls,
 //! parameters and outputs participating in model-based design of
 //! experiment (MBDoE) problems
 ////////////////////////////////////////////////////////////////////////
-class BASE_EXPDES
+class BASE_MBDOE
 {
 protected:
 
   //! @brief pointer to DAG of equation
   FFGraph* _dag;
+
+  //! @brief Size of model candidates
+  size_t _nm;
 
   //! @brief Size of model output
   size_t _ny;
@@ -45,18 +48,21 @@ protected:
   size_t _ne0;
 
   //! @brief vector of model outputs
-  std::vector<FFVar> _vOUT;
+  std::vector<std::vector<FFVar>> _vOUT;
 
   //! @brief vector of model output variances
   std::vector<double> _vOUTVAR;
 
+  //! @brief vector of model weights
+  std::vector<double> _vOUTWEI;
+
   //! @brief vector of model parameters
   std::vector<FFVar> _vPAR;
 
-  //! @brief list of model parameter values
+  //! @brief vector of model parameter values
   std::vector<std::vector<double>> _vPARVAL;
 
-  //! @brief list of model parameter weights
+  //! @brief vector of model parameter weights
   std::vector<double> _vPARWEI;
 
   //! @brief matrix of model parameter scaling factors
@@ -89,12 +95,12 @@ public:
   };
 
   //! @brief Class constructor
-  BASE_EXPDES()
-    : _dag(nullptr), _ny(0), _np(0), _nc(0), _ne0(0)
+  BASE_MBDOE()
+    : _dag(nullptr), _nm(0), _ny(0), _np(0), _nc(0), _ne0(0)
     {}
 
   //! @brief Class destructor
-  virtual ~BASE_EXPDES()
+  virtual ~BASE_MBDOE()
     {}
 
   //! @brief Get pointer to DAG
@@ -107,35 +113,90 @@ public:
     ( FFGraph& dag )
     { _dag = &dag; }
 
-  //! @brief Get number of model outputs
+  //! @brief Get size of model candidates
+  size_t nm
+    ()
+    const
+    { return _nm; }
+
+  //! @brief Get size of model outputs
   size_t ny
     ()
     const
     { return _ny; }
 
-  //! @brief Get number of experimental controls
+  //! @brief Get size of experimental controls
   size_t nc
     ()
     const
     { return _nc; }
 
-  //! @brief Get number of model parameters
+  //! @brief Get size of model parameters
   size_t np
     ()
     const
     { return _np; }
 
-  //! @brief Set model outputs
+  //! @brief Set model outputs for single model
   void set_model
     ( std::vector<FFVar> const& Y, std::vector<double> const& varY=std::vector<double>() )
     {
       assert( !Y.empty() );
+      _nm = 1;
       _ny = Y.size();
-      _vOUT = Y;
+      _vOUT.assign( { Y } );
+      _vOUTWEI.assign( { 1. } );
       _vOUTVAR = varY;
     }
 
-  //! @brief Set nominal model parameters and parameter scaling
+  //! @brief Set model outputs for multiple candidate models
+  void set_models
+    ( std::list<std::vector<FFVar>> const& l_Y, std::vector<double> const& varY=std::vector<double>() )
+    {
+      assert( !l_Y.empty() && !l_Y.front().empty() );
+      _nm = l_Y.size();
+      _ny = l_Y.front().size();
+
+      _vOUT.clear();
+      _vOUT.reserve( _nm );
+      _vOUTWEI.clear();
+      _vOUTWEI.reserve( _nm );
+      for( auto const& Ym : l_Y ){
+        assert( Ym.size() == _ny );
+        _vOUT.push_back( Ym );
+        _vOUTWEI.push_back( 1./(double)_nm );
+      }
+
+      _vOUTVAR = varY;
+    }
+
+  //! @brief Set model outputs for multiple candidate models
+  void set_models
+    ( std::list<std::pair<std::vector<FFVar>,double>> const& l_Y,
+      std::vector<double> const& varY=std::vector<double>() )
+    {
+      assert( !l_Y.empty() && !l_Y.front().first.empty() );
+      _nm = l_Y.size();
+      _ny = l_Y.front().first.size();
+
+      _vOUT.clear();
+      _vOUT.reserve( _nm );
+      double Wtot = 0.;
+      for( auto const& [Ym,Wm] : l_Y ){
+        assert( Ym.size() == _ny && Wm >= 0. );
+        _vOUT.push_back( Ym );
+        Wtot += Wm;
+      }
+
+      _vOUTWEI.clear();
+      _vOUTWEI.reserve( _nm );
+      for( auto const& [Ym,Wm] : l_Y )
+        _vOUTWEI.push_back( Wm/Wtot );
+
+      _vOUTVAR = varY;
+    }
+
+  //! @brief Set nominal model parameters and parameter scaling (matrix format)
   void set_parameters
     ( std::vector<FFVar> const& P, std::vector<double> const& valP,
       arma::mat const& scaP )
@@ -144,7 +205,7 @@ public:
       _mPARSCA = scaP;
     }
 
-  //! @brief Set nominal model parameters
+  //! @brief Set nominal model parameters and parameter scaling (vector format)
   void set_parameters
     ( std::vector<FFVar> const& P, std::vector<double> const& valP,
       std::vector<double> const& scaP=std::vector<double>() )
@@ -163,7 +224,7 @@ public:
         //_mPARSCA = arma::inv( arma::diagmat( arma::vec( scaP ) ) );
     }
 
-  //! @brief Set list of model parameters and parameter scaling
+  //! @brief Set list of model parameter scenaros and parameter scaling (matrix format)
   void set_parameters
     ( std::vector<FFVar> const& P, std::list<std::vector<double>> const& l_valP,
       arma::mat const& scaP )
@@ -172,7 +233,7 @@ public:
       _mPARSCA = scaP;
     }
 
-  //! @brief Set list of model parameters
+  //! @brief Set list of model parameter scenaros and parameter scaling (vector format)
   void set_parameters
     ( std::vector<FFVar> const& P, std::list<std::vector<double>> const& l_valP,
       std::vector<double> const& scaP=std::vector<double>() )
@@ -310,12 +371,12 @@ public:
 private:
 
   //! @brief Private methods to block default compiler methods
-  BASE_EXPDES( BASE_EXPDES const& ) = delete;
-  BASE_EXPDES& operator=( BASE_EXPDES const& ) = delete;
+  BASE_MBDOE( BASE_MBDOE const& ) = delete;
+  BASE_MBDOE& operator=( BASE_MBDOE const& ) = delete;
 };
 
 inline std::list<std::vector<double>>
-BASE_EXPDES::uniform_sample
+BASE_MBDOE::uniform_sample
 ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB )
 {
   assert( NSAM && LB.size() && LB.size() == UB.size() );
@@ -338,7 +399,7 @@ BASE_EXPDES::uniform_sample
 }
 
 inline void
-BASE_EXPDES::effort_apportion
+BASE_MBDOE::effort_apportion
 ( unsigned const n, unsigned const* typ, double* val )
 {
   double const TOLZERO = 1e-10;
@@ -391,7 +452,7 @@ BASE_EXPDES::effort_apportion
 }
 
 inline void
-BASE_EXPDES::effort_rounding
+BASE_MBDOE::effort_rounding
 ( unsigned const n, unsigned const* typ, double* val )
 {
   double const TOLZERO = 1e-10;

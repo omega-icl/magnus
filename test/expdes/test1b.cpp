@@ -2,7 +2,7 @@
 //#define MC__MBDOE_SETUP_DEBUG
 //#define MC__MBDOE_SAMPLE_DEBUG
 
-#include "mbdoeslv.hpp"
+#include "expdes.hpp"
 
 ////////////////////////////////////////////////////////////////////////
 int main()
@@ -139,9 +139,9 @@ int main()
   // Output variance
   std::vector<double> YVAR( NY*NS, 4e-2 );
 
-  mc::MBDOESLV DOE;
-  DOE.options.CRITERION = mc::FFDOEBase::DOPT;//BROPT;
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;//AVERSE;//
+  mc::EXPDES DOE;
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 0;
@@ -198,20 +198,20 @@ int main()
     //{ 3, { 9.92188e-02, 9.92188e-02, 5.39063e-02, 1.17188e-02, 2.75884e+02 } }
   };
 */
-  DOE.options.CRITERION = mc::FFDOEBase::DOPT;//BROPT;//
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;//AVERSE;//
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;//
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-NEUTRAL" );
  
-  DOE.options.CRITERION = mc::FFDOEBase::DOPT;//BROPT;//
-  DOE.options.RISK      = mc::MBDOESLV::Options::AVERSE;//NEUTRAL;//
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;//
+  DOE.options.RISK      = mc::EXPDES::Options::AVERSE;//NEUTRAL;//
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-AVERSE" );
 
-  DOE.options.CRITERION = mc::FFDOEBase::BROPT;//DOPT;//
-  DOE.options.RISK      = mc::MBDOESLV::Options::NEUTRAL;//AVERSE;//
+  DOE.options.CRITERION = mc::EXPDES::BRISK;//DOPT;//
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
   DOE.setup();
-  DOE.evaluate_design( campaign, "BROPT" );
+  DOE.evaluate_design( campaign, "BRISK" );
 
 
   /////////////////////////////////////////////////////////////////////////

@@ -1,9 +1,5 @@
 #define SAVE_RESULTS		// <- Whether to save bounds to file
-#define CANON__EXPDES_SHOW_APPORTION
-//#define MC__EXPDES_SETUP_DEBUG
-//#define MC__EXPDES_SAMPLE_DEBUG
-#undef MC__FFGRADDOECRIT_DEBUG
-#undef MC__FFGRADDOEEFF_DEBUG
+#define MAGNUS__EXPDES_SHOW_APPORTION
 
 #include "expdes.hpp"
 

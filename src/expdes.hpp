@@ -42,23 +42,23 @@
 
 #include "minlpslv.hpp"
 
-#include "base_expdes.hpp"
+#include "base_mbdoe.hpp"
+
 #include "fflin.hpp"
 #include "ffdoe.hpp"
 #include "ffode.hpp"
-//#include "ffvect.hpp"
 
 #define MAGNUS__EXPDES_USE_OPFIM
 
 namespace mc
 {
-//! @brief C++ class for MBDoE solution using MC++
+//! @brief C++ class for design of experiments for model parameter precision
 ////////////////////////////////////////////////////////////////////////
-//! mc::EXPDES is a C++ class for solving problems in model-based
-//! design of experiments using MC++
+//! mc::EXPDES is a C++ class for solving design of experiments for
+//! model parameter precision using MC++, CRONOS and CANON
 ////////////////////////////////////////////////////////////////////////
 class EXPDES
-: public virtual BASE_EXPDES
+: public virtual BASE_MBDOE
 {
 
 protected:
@@ -148,9 +148,6 @@ public:
   //! @brief Constructor
   EXPDES()
     : _dag(nullptr), _dagdoe(nullptr),
-#ifndef MC__FFODCRIT_IDW
-      _OUTMAXDIST(0./0.),
-#endif
       _VOpt(0./0.)
     { stats.reset(); }
 
@@ -166,7 +163,7 @@ public:
   {
     //! @brief Constructor
     Options():
-      CRITERION(BASE_EXPDES::DOPT), RISK(NEUTRAL), CVARTHRES(0.25),
+      CRITERION(BASE_MBDOE::DOPT), RISK(NEUTRAL), CVARTHRES(0.25),
       UNCREDUC(1e-2), FIMSTOL(1e-7), IDWTOL(1e-3),
       MINDIST(1e-6), MAXITER(4), TOLITER(1e-4), DISPLEVEL(0),
       MINLPSLV(), NLPSLV()
@@ -235,7 +232,7 @@ public:
       AVERSE     //!< Perform a risk-averse CVaR design
     };
     //! @brief Selected DOE criterion
-    BASE_EXPDES::TYPE         CRITERION;
+    BASE_MBDOE::TYPE         CRITERION;
     //! @brief Selected risk attitude
     RISK_TYPE                RISK;
     //! @brief Percentile threshold for CVaR calculation
@@ -270,6 +267,7 @@ public:
       BADSIZE=0,    //!< Inconsistent dimensions
       BADIVP,       //!< Misspecified IVP-ODE
       NOMODEL,	    //!< unspecified model
+      BADCRIT,      //!< Misspecified design criterion
       INTERN=-33    //!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
@@ -285,6 +283,8 @@ public:
           return "EXPDES::Exceptions  Misspecified IVP-ODE model";
         case NOMODEL:
           return "EXPDES::Exceptions  Unspecified model";
+        case BADCRIT:
+          return "MODISCR::Exceptions  Misspecified design criterion";
         case INTERN:
         default:
           return "EXPDES::Exceptions  Internal error";
@@ -338,14 +338,14 @@ public:
 
   //! @brief Setup EXPDES problem before solution
   bool setup
-    ();
+    ( size_t const ndxmod=0 );
 
   //! @brief Evaluate performance of experimental campaign
   std::pair<double,bool> evaluate_design
     ( std::list<std::pair<double,std::vector<double>>> const& Campaign, std::string const& type="",
       std::ostream& os=std::cout );
 
-  //! @brief Generate FIM samples for <a>NSAM</a> initial supports
+  //! @brief Generate <a>NSAM</a> initial supports
   bool sample_supports
     ( size_t const NSAM, std::ostream& os=std::cout );
 
@@ -424,19 +424,15 @@ protected:
 
   //! @brief Create local copy of output model for output prediction
   void _setup_out
-    ();
+    ( size_t const ndxmod );
 
   //! @brief Create local copy of output model for FIM prediction
   void _setup_fim
-    ();
+    ( size_t const ndxmod );
 
   //! @brief Generate output samples for <a>NSAM</a> initial supports
   bool _sample_out
     ( size_t const NSAM, std::ostream& os=std::cout );
-
-  //! @brief Set maximal output distance
-  void _sample_maxdist
-    ( std::ostream& os );
 
   //! @brief Select uncertainty scenario subset based on highest value
   void _sample_rank
@@ -554,7 +550,7 @@ protected:
 inline
 bool
 EXPDES::setup
-()
+( size_t const ndxmod )
 {
   stats.reset();
   auto&& t_setup = stats.start();
@@ -565,14 +561,17 @@ EXPDES::setup
   switch( options.CRITERION ){
    case BRISK:
    case ODIST:
-    _setup_out();
+    _setup_out( ndxmod );
     break;
+
    case AOPT:
    case DOPT:
    case EOPT:
-   default:
-    _setup_fim();
+    _setup_fim( ndxmod );
     break;
+
+   default:
+    throw Exceptions( Exceptions::BADCRIT );
   }
 
   stats.walltime_setup += stats.walltime( t_setup );
@@ -583,20 +582,20 @@ EXPDES::setup
 inline
 void
 EXPDES::_setup_out
-()
+( size_t const ndxmod )
 {
-  if( !_ny || _ny != BASE_EXPDES::_vOUT.size() || !BASE_EXPDES::_vCON.size() )
+  if( ndxmod >= _nm || !_ny || _ny != BASE_MBDOE::_vOUT[ndxmod].size() || !BASE_MBDOE::_vCON.size() )
     throw Exceptions( Exceptions::BADSIZE );
 
   delete _dag; _dag = new DAG;
-  _dag->options = BASE_EXPDES::_dag->options;
+  _dag->options = BASE_MBDOE::_dag->options;
 
   _vCON.resize( _nc );
-  _dag->insert( BASE_EXPDES::_dag, _nc, BASE_EXPDES::_vCON.data(), _vCON.data() );
+  _dag->insert( BASE_MBDOE::_dag, _nc, BASE_MBDOE::_vCON.data(), _vCON.data() );
   _vPAR.resize( _np );
-  _dag->insert( BASE_EXPDES::_dag, _np, BASE_EXPDES::_vPAR.data(), _vPAR.data() );
+  _dag->insert( BASE_MBDOE::_dag, _np, BASE_MBDOE::_vPAR.data(), _vPAR.data() );
   _vOUT.resize( _ny );
-  _dag->insert( BASE_EXPDES::_dag, _ny, BASE_EXPDES::_vOUT.data(), _vOUT.data() );
+  _dag->insert( BASE_MBDOE::_dag, _ny, BASE_MBDOE::_vOUT[ndxmod].data(), _vOUT.data() );
 
 #ifdef MAGNUS__EXPDES_SETUP_DEBUG
   _sgOUT = _dag->subgraph( _ny, _vOUT.data() );
@@ -609,20 +608,20 @@ EXPDES::_setup_out
 inline
 void
 EXPDES::_setup_fim
-()
+( size_t const ndxmod )
 {
-  if( !_ny || _ny != BASE_EXPDES::_vOUT.size() || !BASE_EXPDES::_vCON.size() )
+  if( ndxmod >= _nm || !_ny || _ny != BASE_MBDOE::_vOUT[ndxmod].size() || !BASE_MBDOE::_vCON.size() )
     throw Exceptions( Exceptions::BADSIZE );
 
   delete _dag; _dag = new DAG;
-  _dag->options = BASE_EXPDES::_dag->options;
+  _dag->options = BASE_MBDOE::_dag->options;
 
   _vCON.resize( _nc );
-  _dag->insert( BASE_EXPDES::_dag, _nc, BASE_EXPDES::_vCON.data(), _vCON.data() );
+  _dag->insert( BASE_MBDOE::_dag, _nc, BASE_MBDOE::_vCON.data(), _vCON.data() );
   _vPAR.resize( _np );
-  _dag->insert( BASE_EXPDES::_dag, _np, BASE_EXPDES::_vPAR.data(), _vPAR.data() );
+  _dag->insert( BASE_MBDOE::_dag, _np, BASE_MBDOE::_vPAR.data(), _vPAR.data() );
   _vOUT.resize( _ny );
-  _dag->insert( BASE_EXPDES::_dag, _ny, BASE_EXPDES::_vOUT.data(), _vOUT.data() );
+  _dag->insert( BASE_MBDOE::_dag, _ny, BASE_MBDOE::_vOUT[ndxmod].data(), _vOUT.data() );
 
   auto OPTION_DIFF_SAVE = FFODE::options.DIFF;
   FFODE::options.DIFF = FFODE::Options::SYM_C;
@@ -692,9 +691,11 @@ EXPDES::sample_supports
     case AOPT:
     case DOPT:
     case EOPT:
-    default:
       flag = _sample_fim( NSAM, os );
       break;
+
+   default:
+    throw Exceptions( Exceptions::BADCRIT );
   }
 
   if( options.DISPLEVEL )
@@ -742,27 +743,11 @@ EXPDES::_sample_out
        << std::right << std::fixed << std::setprecision(2)
        << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
 
-  // Compute maximum distance for big-M constaints
-  if( options.CRITERION == ODIST ){
-#ifndef MC__FFODCRIT_IDW
-    tstart = stats.start();
-    if( options.DISPLEVEL )
-      os << std::endl
-         << "** COMPUTING MAXIMAL OUTPUT DISTANCE " << std::flush;
-    FFDOEBase::set_noise( _vOUTVAR );
-    FFDOEBase::set_weighting( _vPARWEI );
-    _sample_maxdist( os );
-    if( options.DISPLEVEL )
-      os << std::right << std::fixed << std::setprecision(2)
-         << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
-#ifdef MAGNUS__EXPDES_SAMPLE_DEBUG
-    std::cout << "_OUTMAXDIST: " << _OUTMAXDIST << std::endl;
-#endif
-#endif
-    return true;
-  }
-
-  if( !NSAM || options.UNCREDUC==0 || options.UNCREDUC >= 1. || -options.UNCREDUC >= NUNC-1 )
+  if( !NSAM
+   || options.CRITERION == ODIST
+   || options.UNCREDUC  == 0
+   || options.UNCREDUC  >= 1.
+   || -options.UNCREDUC >= NUNC-1 )
     return true;
 
   // Perform scenario reduction for Bayes risk
@@ -876,23 +861,6 @@ EXPDES::_sample_rank
     if( BRsum >= BRtot*(1-options.UNCREDUC) ) break;
   }
   //std::cerr << parsel.size() << " pairs\n";
-}
-
-inline
-void
-EXPDES::_sample_maxdist
-( std::ostream& os )
-{
-  size_t const NSUPP = _vCONSAM.size();
-  //_OUTMAXDIST = 1e2;//0.;
-  //return;
-  for( size_t e1=0; e1<NSUPP; ++e1 )
-    for( size_t e2=e1+1; e2<NSUPP; ++e2 ){
-      _OUTMAXDIST = std::max( _OUTMAXDIST, FFDOEBase::atom_ODIST( _vOUTSAM, e1, e2 ) );
-#ifdef MAGNUS__EXPDES_SAMPLE_DEBUG
-      std::cout << "d(" << e1 << "," << e2 << "): " << FFDOEBase::atom_ODIST( _vOUTSAM, e1, e2 ) << std::endl;
-#endif
-    }
 }
 
 inline
@@ -1271,25 +1239,14 @@ const
     //  SELi[j] = SEL[j*(j-1)/2+i];
     //FFVar vODISTEff = OpODISTEff( SELi, i, NEXP, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
     FFVar vODISTEff = OpODISTEff( SEL, i, NEXP, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
-#ifdef MC__FFODCRIT_IDW
     doe.add_ctr( BASE_OPT::GE, OD - vODISTEff + (1-SEL[i]) / options.IDWTOL );
     doe.add_ctr( BASE_OPT::GE, SEL[i] - EFF[i] );
     //doe.add_ctr( BASE_OPT::GE, OD - vODISTEff );
     //for( size_t j=0; j<i; j++ )
     //  doe.add_ctr( BASE_OPT::GE, SELi[j] - EFF[i] - EFF[j] + 1 );
-#else
-    doe.add_ctr( BASE_OPT::LE, OD - vODISTEff - (1-SEL[i]) * _OUTMAXDIST );
-    doe.add_ctr( BASE_OPT::GE, SEL[i] - EFF[i] );
-    //doe.add_ctr( BASE_OPT::LE, SEL[i] - EFF[i] );
-    //doe.add_ctr( BASE_OPT::GE, SEL[i] - EFF[i] / NEXP );
-#endif
   }
 
-#ifdef MC__FFODCRIT_IDW
   doe.set_obj( BASE_OPT::MIN, OD );
-#else
-  doe.set_obj( BASE_OPT::MAX, OD );
-#endif
 
   E0.insert( E0.end(), NSUPP+1, 0e0 );
 }
@@ -1544,15 +1501,9 @@ EXPDES::_evaluate_ODist
   _dagdoe->eval( FGRADODCrit, DGRADODCrit, CTOT, CTOT0 );
 #endif
 
-#ifdef MC__FFODCRIT_IDW
   double ODIST = 0.;
   for( size_t e=0; e<NSUP; ++e )
     if( ODIST < DODCrit[e] ) ODIST = DODCrit[e];
-#else
-  double ODIST = 0./0.;
-  for( size_t e=0; e<NSUP; ++e )
-    if( ODIST > DODCrit[e] ) ODIST = DODCrit[e];
-#endif
 #ifdef MAGNUS__EXPDES_SOLVE_DEBUG
   std::cout << "ODIST = " << ODIST << std::endl;
 #endif
@@ -1765,11 +1716,7 @@ EXPDES::_refine_set_ODist
   // Define output distance objective
   FFVar OD( _dagdoe );
   doeref.add_var( OD );
-#ifdef MC__FFODCRIT_IDW
   doeref.set_obj( BASE_OPT::MIN, OD );
-#else
-  doeref.set_obj( BASE_OPT::MAX, OD );
-#endif
 
   size_t const NC = _vCONSAM.size();
   if( _ROpt.size() == NC+1 )
@@ -1784,13 +1731,8 @@ EXPDES::_refine_set_ODist
 #endif
 
   size_t const NS = EOpt.size();
-#ifdef MC__FFODCRIT_IDW
   for( size_t i=0; i<NS; i++ )
     doeref.add_ctr( BASE_OPT::GE, OD - *ppODCrit[i] );
-#else
-  for( size_t i=0; i<NS; i++ )
-    doeref.add_ctr( BASE_OPT::LE, OD - *ppODCrit[i] );
-#endif
 }
 
 inline

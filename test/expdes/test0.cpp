@@ -48,7 +48,7 @@ int main()
   std::vector<double> YVAR( { 1e-1 } );
 
   mc::EXPDES DOE;
-  DOE.options.CRITERION = mc::EXPDES::DOPT;//DOPT;//BROPT;//
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//DOPT;//BRISK;//
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//NEUTRAL;//
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
@@ -102,7 +102,7 @@ int main()
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-AVERSE" );
 
-  DOE.options.CRITERION = mc::EXPDES::BROPT;
+  DOE.options.CRITERION = mc::EXPDES::BRISK;
   DOE.setup();
   DOE.evaluate_design( campaign, "BROPT" );
   
