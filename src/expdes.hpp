@@ -596,6 +596,7 @@ EXPDES::_setup_out
   _dag->insert( BASE_MBDOE::_dag, _np, BASE_MBDOE::_vPAR.data(), _vPAR.data() );
   _vOUT.resize( _ny );
   _dag->insert( BASE_MBDOE::_dag, _ny, BASE_MBDOE::_vOUT[ndxmod].data(), _vOUT.data() );
+  _sgOUT.clear();
 
 #ifdef MAGNUS__EXPDES_SETUP_DEBUG
   _sgOUT = _dag->subgraph( _ny, _vOUT.data() );
@@ -648,6 +649,7 @@ EXPDES::_setup_fim
 #endif
   _dFIM.resize( _vFIM.size() );
   delete[] y_p;
+  _sgFIM.clear();
   
 #ifdef MAGNUS__EXPDES_SETUP_DEBUG
   _sgFIM = _dag->subgraph( _vFIM.size(), _vFIM.data() );

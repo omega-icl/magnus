@@ -505,6 +505,7 @@ MODISCR::_setup_out
   for( size_t m=0; m<_nm; ++m ){
     _vOUT[m].resize( _ny );
     _dag->insert( BASE_MBDOE::_dag, _ny, BASE_MBDOE::_vOUT[m].data(), _vOUT[m].data() );
+    _sgOUT[m].clear();
 #ifdef MAGNUS__MODISCR_SETUP_DEBUG
     _sgOUT[m] = _dag->subgraph( _ny, _vOUT[m].data() );
     std::vector<FFExpr> exOUT = FFExpr::subgraph( _dag, _sgOUT[m] ); 
