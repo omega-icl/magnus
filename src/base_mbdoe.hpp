@@ -2,10 +2,10 @@
 // All Rights Reserved.
 // This code is published under the Eclipse Public License.
 
-#ifndef CANON__BASE_MBDOE_HPP
-#define CANON__BASE_MBDOE_HPP
+#ifndef MAGNUS__BASE_MBDOE_HPP
+#define MAGNUS__BASE_MBDOE_HPP
 
-#undef  CANON__DEBUG__BASE_MBDOE
+#undef  MAGNUS__DEBUG__BASE_MBDOE
 
 #include <assert.h>
 
@@ -15,7 +15,6 @@
 #include <armadillo>
 
 #include "ffunc.hpp"
-#include "odeslvs_cvodes.hpp"
 
 namespace mc
 {

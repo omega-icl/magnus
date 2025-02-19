@@ -137,9 +137,6 @@ private:
   //! @brief vector of atom matrices
   std::vector< std::vector< arma::mat > > _vFIMSAM;
 
-  //! @brief maximal output separation
-  double _OUTMAXDIST;
-
 public:
   /** @defgroup EXPDES Model-based Design of Experiments using MC++
    *  @{
@@ -265,7 +262,6 @@ public:
     //! @brief Enumeration type for EXPDES exception handling
     enum TYPE{
       BADSIZE=0,    //!< Inconsistent dimensions
-      BADIVP,       //!< Misspecified IVP-ODE
       NOMODEL,	    //!< unspecified model
       BADCRIT,      //!< Misspecified design criterion
       INTERN=-33    //!< Internal error
@@ -279,12 +275,10 @@ public:
       switch( _ierr ){
         case BADSIZE:
           return "EXPDES::Exceptions  Inconsistent dimensions";
-        case BADIVP:
-          return "EXPDES::Exceptions  Misspecified IVP-ODE model";
         case NOMODEL:
           return "EXPDES::Exceptions  Unspecified model";
         case BADCRIT:
-          return "MODISCR::Exceptions  Misspecified design criterion";
+          return "EXPDES::Exceptions  Misspecified design criterion";
         case INTERN:
         default:
           return "EXPDES::Exceptions  Internal error";

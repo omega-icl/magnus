@@ -5581,7 +5581,7 @@ private:
   // output variance
   std::vector<double> const* _OUTVAR;
   // data
-  std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* _DAT;
+  std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* _DAT;
 
   // Number of parameters
   size_t _np;
@@ -5616,7 +5616,7 @@ public:
   void set
     ( FFGraph* dag, std::vector<FFVar> const* par, std::vector<FFVar> const* con,
       std::vector<FFVar> const* out, std::vector<double> const* outvar,
-      std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
+      std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
     {
       _np = par->size();
       _nc = con->size();
@@ -5668,7 +5668,7 @@ public:
   FFVar& operator()
     ( FFVar const* var, FFGraph* dag, std::vector<FFVar> const* par, std::vector<FFVar> const* con,
       std::vector<FFVar> const* out, std::vector<double> const* outvar,
-      std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
+      std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
     {
       set( dag, par, con, out, outvar, dat );
       return **insert_external_operation( *this, 1, _np, var );
@@ -5768,7 +5768,7 @@ private:
   // output variance
   std::vector<double> const* _OUTVAR;
   // data
-  std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* _DAT;
+  std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* _DAT;
 
   // Number of parameters
   size_t _np;
@@ -5803,7 +5803,7 @@ public:
   void set
     ( FFGraph* dag, std::vector<FFVar> const* par, std::vector<FFVar> const* con,
       std::vector<FFVar> const* out, std::vector<double> const* outvar,
-      std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
+      std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
     {
       _np = par->size();
       _nc = con->size();
@@ -5870,7 +5870,7 @@ public:
   FFVar& operator()
     ( size_t const idep, FFVar const* var, FFGraph* dag, std::vector<FFVar> const* par,
       std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<double> const* outvar,
-      std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
+      std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
     {
 #ifdef MC__FFGRADMLE_CHECK
       assert( idep < _np );
@@ -5882,7 +5882,7 @@ public:
   FFVar** operator()
     ( FFVar const* var, FFGraph* dag, std::vector<FFVar> const* par, std::vector<FFVar> const* con,
       std::vector<FFVar> const* out, std::vector<double> const* outvar,
-      std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
+      std::vector<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> const* dat )
     {
       set( dag, par, con, out, outvar, dat );
       return insert_external_operation( *this, _np, _np, var );

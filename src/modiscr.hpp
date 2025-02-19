@@ -237,7 +237,6 @@ public:
     //! @brief Enumeration type for MODISCR exception handling
     enum TYPE{
       BADSIZE=0,    //!< Inconsistent dimensions
-      BADIVP,       //!< Misspecified IVP-ODE
       NOMODEL,	    //!< Unspecified model
       BADCRIT,      //!< Misspecified design criterion
       INTERN=-33    //!< Internal error
@@ -251,8 +250,6 @@ public:
       switch( _ierr ){
         case BADSIZE:
           return "MODISCR::Exceptions  Inconsistent dimensions";
-        case BADIVP:
-          return "MODISCR::Exceptions  Misspecified IVP-ODE model";
         case NOMODEL:
           return "MODISCR::Exceptions  Unspecified model";
         case BADCRIT:
