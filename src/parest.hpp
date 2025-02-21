@@ -613,6 +613,21 @@ PAREST::cov_bootstrap
   for( size_t g=0; g<_ng; ++g )
     PE.add_ctr( std::get<1>(_vCTR).at(g), std::get<0>(_vCTR).at(g)-std::get<2>(_vCTR).at(g) );
 
+  // Number of measurement for dataset
+  size_t nd = 0;
+  for( size_t m=0; m<_nm; ++m )
+    for( auto& EXP : data[m] )
+      for( auto& [ k, RECk ] : EXP.output )
+        nd += RECk.measurement.size();
+
+  // Initialize Sobol sampler
+  std::vector<double> vSAM(nd), Ym_noise(nd);
+  typedef boost::random::sobol_engine< boost::uint_least64_t, 64u > sobol64;
+  typedef boost::variate_generator< sobol64, boost::uniform_01< double > > qrgen;
+  sobol64 eng( nd ); // sample nd-dimensional space
+  qrgen noise( eng, boost::uniform_01<double>() );
+  noise.engine().seed( 0 );
+
   // Apply bootstrapping to MLE problem
   for( size_t isam=0; isam<nsam; ++isam ){
 
@@ -628,8 +643,9 @@ PAREST::cov_bootstrap
 #endif
           for( auto& YMk : RECk.measurement ){
             var(0,0) = RECk.variance;
-            arma::mat dYk = arma::mvnrnd( mean, var );
-            YMk += dYk(0,0);
+            //arma::mat dYk = arma::mvnrnd( mean, var );
+            //YMk += dYk(0,0);
+            YMk += quantile( normal( 0, std::sqrt(RECk.variance) ), noise() );
 #ifdef MAGNUS__PAREST_CONF_DEBUG
             std::cout << "YM(" << isam << ")[" << std::to_string(m) << "," << std::to_string(e) << "]["
                       << std::to_string(k) << "][" << std::to_string(r++) << "] = "
