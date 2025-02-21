@@ -13,11 +13,6 @@ int main()
   /////////////////////////////////////////////////////////////////////////
   // Define model: Ratkowsky
 
-  const unsigned NS = 41;  // Time stages
-  std::vector<double> tk( NS+1 );
-  tk[0] = 0.;
-  for( unsigned k=0; k<NS; k++ ) tk[k+1] = tk[k] + 1e1/(NS-1); // [day]
-
   const unsigned NP = 4;  // Number of estimated parameters
   const unsigned NU = 1;  // Number of experimental controls
   const unsigned NY = 1;  // Number of outputs
@@ -74,9 +69,8 @@ int main()
   //PE.options.NLPSLV.GRADMETH = PE.options.NLPSLV.FSYM;//FAD;
 
   PE.set_dag( DAG );
-  PE.set_model( Y );
-  PE.set_controls( U );
-  PE.set_parameters( P, PLB, PUB );//, PSCA );
+  PE.add_model( Y, U );
+  PE.set_parameter( P, PLB, PUB );
   PE.set_data( Data );
 
   PE.setup();

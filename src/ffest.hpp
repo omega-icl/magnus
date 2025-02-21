@@ -151,8 +151,8 @@ public:
       _DPAR.reserve( _np );
       _DCON.clear();
       _DCON.reserve( _ne );
-      for( auto const& [con,dum] : *_DAT )
-        _DCON.push_back( con );
+      for( auto const& EXP : *_DAT )
+        _DCON.push_back( EXP.control );
     }
 
   // Default constructor
@@ -323,8 +323,8 @@ public:
       _FDCON.clear();
       _FDCON.resize( _ne );
       auto itFDCON = _FDCON.begin();
-      for( auto const& [con,dum] : *_DAT ){
-        itFDCON->assign( con.cbegin(), con.cend() );
+      for( auto const& EXP : *_DAT ){
+        itFDCON->assign( EXP.control.cbegin(), EXP.control.cend() );
 #ifdef MC__FFGRADMLE_DEBUG
         for( size_t c=0; c<_nu; ++c )
           std::cout << "_FDCON[" << c << "] =" << (*itFDCON)[c].val() << std::endl;
@@ -604,8 +604,8 @@ const
   MLE = 0.;
   size_t e = 0;
   for( auto const& EXP : *_DAT ){
-    for( auto const& [ k, RECk ] : EXP.outputs )
-      for( auto const& YMk : RECk.measurements )
+    for( auto const& [ k, RECk ] : EXP.output )
+      for( auto const& YMk : RECk.measurement )
         MLE += sqr( YMk - _DOUT[e][k] ) / RECk.variance;
     ++e;
   }
@@ -670,8 +670,8 @@ const
   dMLE.zeros();
   size_t e = 0;
   for( auto const& EXP : *_DAT ){
-    for( auto const& [ k, RECk ] : EXP.outputs )
-      for( auto const& YMk : RECk.measurements ){
+    for( auto const& [ k, RECk ] : EXP.output )
+      for( auto const& YMk : RECk.measurement ){
         arma::vec dOUTek( &_FDOUT[e][k].d(0), _np, false );
         dMLE -= ( YMk - _FDOUT[e][k].x() ) * dOUTek / RECk.variance;
       }

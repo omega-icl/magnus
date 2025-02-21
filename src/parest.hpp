@@ -5,7 +5,7 @@
 /*!
 \page page_PAREST Parameter Estimation in Parametric Models with MC++
 \author Benoit Chachuat <tt>(b.chachuat@imperial.ac.uk)</tt>
-\version 1.0
+\version 0.2
 \date 2025
 \bug No known bugs.
 */
@@ -88,17 +88,17 @@ private:
   //! @brief DAG of model
   DAG* _dag;
 
+  //! @brief local copy of experimental controls
+  std::vector<std::vector<FFVar>> _vCON;
+
+  //! @brief local copy of model outputs
+  std::vector<std::vector<FFVar>> _vOUT;
+
   //! @brief local copy of model constants
   std::vector<FFVar> _vCST;
 
   //! @brief local copy of model parameters
   std::vector<FFVar> _vPAR;
-
-  //! @brief local copy of experimental controls
-  std::vector<FFVar> _vCON;
-
-  //! @brief local copy of model outputs
-  std::vector<FFVar> _vOUT;
 
   //! @brief local copy of cost regularizations
   std::vector<FFVar> _vREG;
@@ -107,7 +107,7 @@ private:
   std::tuple< std::vector<FFVar>, std::vector<t_CTR>, std::vector<FFVar> > _vCTR;
 
   //! @brief output subgraph
-  FFSubgraph _sgOUT;
+  std::vector<FFSubgraph> _sgOUT;
 
   //! @brief work array for output evaluations
   std::vector<double> _wkOUT;
@@ -305,12 +305,6 @@ public:
     ()
     const
     { return _CRSam; }
-
-protected:
-
-  //! @brief Create local copy of output model for output prediction
-  void _setup_out
-    ();
 };
 
 inline
@@ -321,43 +315,48 @@ PAREST::setup
   stats.reset();
   auto&& t_setup = stats.start();
 
-  if( !_ny ) 
-    throw Exceptions( Exceptions::NOMODEL );
-
-  _setup_out();
-
-  stats.walltime_setup += stats.walltime( t_setup );
-  stats.walltime_all   += stats.walltime( t_setup );
-  return true;
-}
-
-inline
-void
-PAREST::_setup_out
-()
-{
-  if( !_ny || _ny != BASE_PAREST::_vOUT.size() || !BASE_PAREST::_vPAR.size() )
-    throw Exceptions( Exceptions::BADSIZE );
+  if( !_nm ) throw Exceptions( Exceptions::NOMODEL );
+  if( !_np ) throw Exceptions( Exceptions::BADSIZE );
 
   delete _dag; _dag = new DAG;
   _dag->options = BASE_PAREST::_dag->options;
 
-  _vCST.resize( _nc );
-  _dag->insert( BASE_PAREST::_dag, _nc, BASE_PAREST::_vCST.data(), _vCST.data() );
   _vPAR.resize( _np );
   _dag->insert( BASE_PAREST::_dag, _np, BASE_PAREST::_vPAR.data(), _vPAR.data() );
-  _vCON.resize( _nu );
-  if( _nu )
-    _dag->insert( BASE_PAREST::_dag, _nu, BASE_PAREST::_vCON.data(), _vCON.data() );
-  _vOUT.resize( _ny );
-  _dag->insert( BASE_PAREST::_dag, _ny, BASE_PAREST::_vOUT.data(), _vOUT.data() );
 
-  _nr = BASE_PAREST::_vREG.size();
+  if( _nc ){
+    _vCST.resize( _nc );
+    _dag->insert( BASE_PAREST::_dag, _nc, BASE_PAREST::_vCST.data(), _vCST.data() );
+  }
+
+  _sgOUT.clear();
+  _sgOUT.resize( _nm );
+  _vOUT.resize( _nm );
+  _vCON.resize( _nm );
+  size_t nytot = 0;
+  for( size_t m=0; m<_nm; nytot+=_ny[m++] ){
+    if( _nu[m] ){
+      _vCON[m].resize( _nu[m] );
+      _dag->insert( BASE_PAREST::_dag, _nu[m], BASE_PAREST::_vCON[m].data(), _vCON[m].data() );
+    }
+    if( _ny[m] ){
+      _vOUT[m].resize( _ny[m] );
+      _dag->insert( BASE_PAREST::_dag, _ny[m], BASE_PAREST::_vOUT[m].data(), _vOUT[m].data() );
+
+#ifdef MAGNUS__PAREST_SETUP_DEBUG
+      _sgOUT[m] = _dag->subgraph( _ny[m], _vOUT[m].data() );
+      std::vector<FFExpr> exOUT = FFExpr::subgraph( _dag, _sgOUT[m] ); 
+      for( size_t i=0; i<_ny[m]; ++i )
+        std::cout << "OUT[" << m << "][" << i << "] = " << exOUT[i] << std::endl;
+#endif
+    }
+  }
+  if( !nytot ) throw Exceptions( Exceptions::NOMODEL );
+
   _vREG.resize( _nr );
   if( _nr )
     _dag->insert( BASE_PAREST::_dag, _nr, BASE_PAREST::_vREG.data(), _vREG.data() );
   
-  _ng = std::get<0>(BASE_PAREST::_vCTR).size();
   std::get<0>(_vCTR).resize( _ng ); 
   std::get<2>(_vCTR).resize( _ng ); 
   std::get<1>(_vCTR) = std::get<1>(BASE_PAREST::_vCTR);
@@ -366,14 +365,9 @@ PAREST::_setup_out
     _dag->insert( BASE_PAREST::_dag, _ng, std::get<2>(BASE_PAREST::_vCTR).data(), std::get<2>(_vCTR).data() );
   }
 
-  _sgOUT.clear();
-
-#ifdef MAGNUS__PAREST_SETUP_DEBUG
-  _sgOUT = _dag->subgraph( _ny, _vOUT.data() );
-  std::vector<FFExpr> exOUT = FFExpr::subgraph( _dag, _sgOUT ); 
-  for( size_t i=0; i<_ny; ++i )
-    std::cout << "OUT[" << i << "] = " << exOUT[i] << std::endl;
-#endif
+  stats.walltime_setup += stats.walltime( t_setup );
+  stats.walltime_all   += stats.walltime( t_setup );
+  return true;
 }
 
 inline
@@ -381,8 +375,8 @@ int
 PAREST::mle_solve
 ( std::vector<double> const& P0, std::vector<double> const& C0, std::ostream& os )
 {
-  if( !_nd  )
-    throw Exceptions( Exceptions::NODATA );
+  if( !_nd  )          throw Exceptions( Exceptions::NODATA );
+  if( !_vOUT.size()  ) throw Exceptions( Exceptions::NOMODEL );
 
   auto&& t_slvmle = stats.start();
 
@@ -395,7 +389,11 @@ PAREST::mle_solve
   PE.add_par( _vCST );
 
   FFMLE OpMLE;
-  _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &C0, &_vDAT );
+  _MLECrit = 0.;
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+  }
   FFLin<I> OpSum;
   if( _nr )
     PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
@@ -417,14 +415,6 @@ PAREST::mle_solve
     os << "# PARAMETER ESTIMATION SOLUTION:\n" << PE.solution();
 
   _MLEOpt = PE.solution();
-//  if( PE.get_status() == NLP::SUCCESSFUL )
-//    _MLEOpt = PE.solution();
-//  else if( PE.is_feasible( options.NLPSLV.FEASTOL )
-//   && ( PE.get_status() == NLP::FAILURE
-//     || PE.get_status() == NLP::INTERRUPTED ) )
-//    _MLEOpt = PE.solution();
-//  else
-//    _MLEOpt = SOLUTION_OPT();
 
   stats.walltime_slvmle += stats.walltime( t_slvmle );
   stats.walltime_all    += stats.walltime( t_slvmle );
@@ -448,7 +438,11 @@ PAREST::mle_solve
   PE.add_par( _vCST );
 
   FFMLE OpMLE;
-  _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &C0, &_vDAT );
+  _MLECrit = 0.;
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+  }
   FFLin<I> OpSum;
   if( _nr )
     PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
@@ -470,14 +464,6 @@ PAREST::mle_solve
     os << "# PARAMETER ESTIMATION SOLUTION:\n" << PE.solution();
 
   _MLEOpt = PE.solution();
-//  if( PE.get_status() == NLP::SUCCESSFUL )
-//    _MLEOpt = PE.solution();
-//  else if( PE.is_feasible( options.NLPSLV.FEASTOL )
-//   && ( PE.get_status() == NLP::FAILURE
-//     || PE.get_status() == NLP::INTERRUPTED ) )
-//    _MLEOpt = PE.solution();
-//  else
-//    _MLEOpt = SOLUTION_OPT();
 
   stats.walltime_slvmle += stats.walltime( t_slvmle );
   stats.walltime_all    += stats.walltime( t_slvmle );
@@ -504,7 +490,11 @@ PAREST::chi2_test
 
   // Compute MLE residual
   FFMLE OpMLE;
-  _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &C0, &_vDAT );
+  _MLECrit = 0.;
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+  }
   try{
     _dag->eval( _wkOUT, 1, &_MLECrit, &Chi2Val, _np, _vPAR.data(), P0.data(), _nc, _vCST.data(), C0.data() );
     Chi2Val *= 2;
@@ -541,7 +531,13 @@ PAREST::cov_bootstrap
   // Simulate model at MLE estimate
   double MLERes = 0./0.;
   FFMLE OpMLE;
-  _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &_MLEOpt.p, &_vDAT );
+  _MLECrit = 0.;
+  std::vector<FFVar> vMLECrit( _nm, 0. );
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    vMLECrit[m] = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &_vDAT[m] );
+    _MLECrit += vMLECrit[m];
+  }
 
   try{
     _dag->eval( _wkOUT, 1, &_MLECrit, &MLERes, _np, _vPAR.data(), _MLEOpt.x.data(), _nc, _vCST.data(), _MLEOpt.p.data() );
@@ -550,14 +546,16 @@ PAREST::cov_bootstrap
     return _CRSam;
   }
 
-  auto const& dOUT = dynamic_cast<FFMLE const*>(_MLECrit.opdef().first)->dOUT();
   auto vDAT0 = _vDAT;
-  size_t e = 0;
-  for( auto& EXP : vDAT0 ){
-    for( auto& [ k, RECk ] : EXP.outputs )
-      for( auto& YMk : RECk.measurements )
-        YMk = dOUT.at(e).at(k);
-    ++e;
+  for( size_t m=0, e=0; m<_nm; ++m, e=0 ){
+    if( !_ny[m] ) continue;
+    auto const& dOUT = dynamic_cast<FFMLE const*>(vMLECrit[m].opdef().first)->dOUT();
+    for( auto& EXP : vDAT0[m] ){
+      for( auto& [ k, RECk ] : EXP.output )
+        for( auto& YMk : RECk.measurement )
+          YMk = dOUT.at(e).at(k);
+      ++e;
+    }
   }
 
   // Define MLE problem
@@ -580,17 +578,23 @@ PAREST::cov_bootstrap
     auto vDATn = vDAT0;
     auto mean = arma::vec( 1, arma::fill::zeros );
     auto var  = arma::mat( 1, 1, arma::fill::none );
-    for( auto& EXP : vDATn ){
-      for( auto& [ k, RECk ] : EXP.outputs )
-        for( auto& YMk : RECk.measurements ){
-          var(0,0) = RECk.variance;
-          arma::mat dYk = arma::mvnrnd( mean, var );
-          YMk += dYk(0,0);
-        }
+    for( size_t m=0; m<_nm; ++m ){
+      for( auto& EXP : vDATn[m] ){
+        for( auto& [ k, RECk ] : EXP.output )
+          for( auto& YMk : RECk.measurement ){
+            var(0,0) = RECk.variance;
+            arma::mat dYk = arma::mvnrnd( mean, var );
+            YMk += dYk(0,0);
+          }
+      }
     }
     
     // Update MLE objective - could also use set_obj_lazy - and solve from MLE estimate
-    _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &_MLEOpt.p, &vDATn );
+    _MLECrit = 0.;
+    for( size_t m=0; m<_nm; ++m ){
+      if( !_ny[m] ) continue;
+      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &vDATn[m] );
+    }
     if( _nr )
       PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
     else
@@ -652,16 +656,6 @@ PAREST::cov_linearized
   dagmle.insert( BASE_PAREST::_dag, _nc, BASE_PAREST::_vCST.data(), vCSTMLE.data() );
   std::vector<mc::FFVar> vPARMLE( _np );
   dagmle.insert( BASE_PAREST::_dag, _np, BASE_PAREST::_vPAR.data(), vPARMLE.data() );
-  std::vector<mc::FFVar> vCONMLE( _nu );
-  if( _nu ) dagmle.insert( BASE_PAREST::_dag, _nu, BASE_PAREST::_vCON.data(), vCONMLE.data() );
-  std::vector<mc::FFVar> vOUTMLE( _ny );
-  dagmle.insert( BASE_PAREST::_dag, _ny, BASE_PAREST::_vOUT.data(), vOUTMLE.data() );
-  std::vector<mc::FFVar> vREGMLE( _nr );
-  if( _nr ) dagmle.insert( BASE_PAREST::_dag, _nr, BASE_PAREST::_vREG.data(), vREGMLE.data() );
-  std::vector<FFVar> vCTR( _ng ), vCTRMLE( _ng );
-  for( size_t g=0; g<_ng; ++g )
-    vCTR[g] = std::get<0>(BASE_PAREST::_vCTR)[g] - std::get<2>(BASE_PAREST::_vCTR)[g];
-  if( _ng ) dagmle.insert( BASE_PAREST::_dag, _ng, vCTR.data(), vCTRMLE.data() );
 
   // Define extended MLE criterion with measurements as variables
   std::vector<mc::FFVar> vUMLE, vYMLE, vYMMLE;
@@ -669,38 +663,55 @@ PAREST::cov_linearized
   arma::mat mYCOV( _nd, _nd, arma::fill::zeros );
 
   mc::FFVar FMLE( 0. );
-  size_t e=0, d=0;
-  for( auto& EXP : _vDAT ){
+  for( size_t m=0, e=0, d=0; m<_nm; ++m, e=0 ){
 
-    std::vector<mc::FFVar> vUMLE_e;
-    for( size_t u=0; u<_nu; ++u ){
-      mc::FFVar UMLE_e_u( &dagmle, "U["+std::to_string(e)+"]["+std::to_string(u)+"]" );
-      vUMLE_e.push_back( UMLE_e_u );
-    }
-    vUMLE.insert( vUMLE.end(), vUMLE_e.cbegin(), vUMLE_e.cend() );
-    dUMLE.insert( dUMLE.end(), EXP.inputs.cbegin(), EXP.inputs.cend() );
+    if( !_ny[m] ) continue;
+    std::vector<mc::FFVar> vCONMLE( _nu[m] );
+    if( _nu[m] ) dagmle.insert( BASE_PAREST::_dag, _nu[m], BASE_PAREST::_vCON[m].data(), vCONMLE.data() );
+    std::vector<mc::FFVar> vOUTMLE( _ny[m] );
+    dagmle.insert( BASE_PAREST::_dag, _ny[m], BASE_PAREST::_vOUT[m].data(), vOUTMLE.data() );
 
-    std::vector<mc::FFVar> vYMLE_e = dagmle.compose( vOUTMLE, vCONMLE, vUMLE_e );
-    for( auto& [ k, RECk ] : EXP.outputs ){
-      for( unsigned r=0; r<RECk.measurements.size(); ++r, ++d ){
-        mc::FFVar YMMLE_e_k_r( &dagmle, "YM["+std::to_string(e)+"]["+std::to_string(k)+"]["+std::to_string(r)+"]" );
-        vYMMLE.push_back( YMMLE_e_k_r );
-        FMLE -= mc::sqr( vYMLE_e.at(k) - YMMLE_e_k_r ) / RECk.variance;
-        mYCOV(d,d) = RECk.variance;
+    for( auto& EXP : _vDAT[m] ){
+
+      std::vector<mc::FFVar> vUMLE_e;
+      for( size_t u=0; u<_nu[m]; ++u ){
+        mc::FFVar UMLE_e_u( &dagmle, "U["+std::to_string(m)+","+std::to_string(e)+"]["+std::to_string(u)+"]" );
+        vUMLE_e.push_back( UMLE_e_u );
       }
-      dYMMLE.insert( dYMMLE.end(), RECk.measurements.cbegin(), RECk.measurements.cend() );
+      vUMLE.insert( vUMLE.end(), vUMLE_e.cbegin(), vUMLE_e.cend() );
+      dUMLE.insert( dUMLE.end(), EXP.control.cbegin(), EXP.control.cend() );
+
+      std::vector<mc::FFVar> vYMLE_e = dagmle.compose( vOUTMLE, vCONMLE, vUMLE_e );
+      for( auto& [ k, RECk ] : EXP.output ){
+        for( unsigned r=0; r<RECk.measurement.size(); ++r, ++d ){
+          mc::FFVar YMMLE_e_k_r( &dagmle, "YM["+std::to_string(m)+","+std::to_string(e)+"]["+std::to_string(k)+"]["+std::to_string(r)+"]" );
+          vYMMLE.push_back( YMMLE_e_k_r );
+          FMLE -= mc::sqr( vYMLE_e.at(k) - YMMLE_e_k_r ) / RECk.variance;
+          mYCOV(d,d) = RECk.variance;
+        }
+        dYMMLE.insert( dYMMLE.end(), RECk.measurement.cbegin(), RECk.measurement.cend() );
+      }
+      ++e;
     }
-    ++e;
   }
   FMLE /= 2.;
-  assert( vUMLE.size() == _nu*_vDAT.size() );
+  //assert( vUMLE.size() == _nu*_vDAT.size() );
   assert( vYMMLE.size() == _nd );
 
   // Add any regularization terms
-  FFLin<I> OpSum;
-  if( _nr ) FMLE -= OpSum( vREGMLE );
-
+  std::vector<mc::FFVar> vREGMLE( _nr );
+  if( _nr ){
+    dagmle.insert( BASE_PAREST::_dag, _nr, BASE_PAREST::_vREG.data(), vREGMLE.data() );
+    FFLin<I> OpSum;
+    FMLE -= OpSum( vREGMLE );
+  }
+  
   // Add active general constraints
+  std::vector<FFVar> vCTR( _ng ), vCTRMLE( _ng );
+  for( size_t g=0; g<_ng; ++g )
+    vCTR[g] = std::get<0>(BASE_PAREST::_vCTR)[g] - std::get<2>(BASE_PAREST::_vCTR)[g];
+  if( _ng ) dagmle.insert( BASE_PAREST::_dag, _ng, vCTR.data(), vCTRMLE.data() );
+
   std::vector<mc::FFVar> vMULMLE;
   std::vector<double> dMULMLE;
   size_t na=0;
@@ -838,11 +849,17 @@ PAREST::conf_ellipsoid
   // Compute limit
   double rhs;
   arma::vec cint = arma::diagvec( arma::sqrt( covmat ) );
+
   if( type == "C" )
     rhs = quantile( chi_squared( _np ), conflevel );
+
   else if( type == "F" ){
     FFMLE OpMLE;
-    _MLECrit = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON, _vOUT, &_MLEOpt.p, &_vDAT );
+    _MLECrit = 0.;
+    for( size_t m=0; m<_nm; ++m ){
+      if( !_ny[m] ) continue;
+      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &_vDAT[m] );
+    }
     try{
       _dag->eval( _wkOUT, 1, &_MLECrit, &rhs, _np, _vPAR.data(), _MLEOpt.x.data(),
                   _nc, _vCST.data(), _MLEOpt.p.data() );
@@ -852,6 +869,7 @@ PAREST::conf_ellipsoid
       return CRSam;
     }
   }
+
   else
     throw Exceptions( Exceptions::BADOPTION );
 #ifdef MAGNUS__PAREST_CONF_DEBUG

@@ -145,11 +145,10 @@ int main()
   //PE.options.NLPSLV.GRADMETH = PE.options.NLPSLV.FSYM;//FAD;
 
   PE.set_dag( DAG );
-  PE.set_model( Y );
-  PE.set_constants( C );
-  PE.set_parameters( P, PLB, PUB );//, PSCA );
+  PE.add_model( Y );
+  PE.set_constant( C );
+  PE.set_parameter( P, PLB, PUB );
   PE.set_data( Data );
-  //PE.add_constraint( P[3], mc::BASE_OPT::EQ, P[1] );
 
   PE.setup();
   PE.mle_solve( P0, C0 );

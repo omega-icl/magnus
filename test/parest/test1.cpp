@@ -86,16 +86,16 @@ int main()
       std::cout << " | ";
       arma::mat YNOISE = arma::mvnrnd( YM, YC );
       for( size_t k=0; k<NY; ++k ){
-        if( exp.outputs.count( k ) )
-          exp.outputs[k].measurements.push_back( DY[k] + YNOISE(k) );
+        if( exp.output.count( k ) )
+          exp.output[k].measurement.push_back( DY[k] + YNOISE(k) );
         else
-          exp.outputs[k].measurements = { DY[k] + YNOISE(k) };
+          exp.output[k].measurement = { DY[k] + YNOISE(k) };
         std::cout << std::setw(12) << DY[k] + YNOISE(k);
       }
       std::cout << std::endl;
     }
     for( size_t k=0; k<NY; ++k )
-      exp.outputs[k].variance = YVAR[k];
+      exp.output[k].variance = YVAR[k];
     Data.push_back( exp );
   }
   std::cout << std::endl;
@@ -117,10 +117,9 @@ int main()
   //PE.options.NLPSLV.GRADMETH = PE.options.NLPSLV.FSYM;//FAD;
 
   PE.set_dag( DAG );
-  PE.set_model( Y );
-  PE.set_controls( X );
+  PE.add_model( Y, X );
   PE.set_data( Data );
-  PE.set_parameters( P, PLB, PUB );//, PSCA );
+  PE.set_parameter( P, PLB, PUB );
   PE.add_constraint( P[3], mc::BASE_OPT::EQ, P[1] );
 
   PE.setup();

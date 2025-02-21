@@ -39,21 +39,21 @@ public:
 
     //! @brief Constructor
     Record
-      ( std::vector<double> const& measurements_, double const& variance_=0. )
-      : measurements( measurements_ ), variance( variance_ )
+      ( std::vector<double> const& measurement_, double const& variance_=0. )
+      : measurement( measurement_ ), variance( variance_ )
       {}
 
     //! @brief Assignment operator
     Record& operator=
       ( Record const& rec )
       {
-        measurements = rec.measurements;
-        variance     = rec.variance;
+        measurement = rec.measurement;
+        variance    = rec.variance;
         return *this;
       }
 
     //! @brief Vector of measurement replicates
-    std::vector<double> measurements;
+    std::vector<double> measurement;
 
     //! @brief Measurement variance
     double variance;
@@ -69,44 +69,47 @@ public:
 
     //! @brief Constructor
     Experiment
-      ( std::vector<double> const& inputs_ )
-      : inputs( inputs_ )
-      {}
-
-    //! @brief Constructor
-    Experiment
-      ( std::vector<double> const& inputs_, std::map<size_t,Record> const& outputs_ )
-      : inputs( inputs_ ), outputs( outputs_ )
+      ( std::vector<double> const& control_,
+        std::map<size_t,Record> const& output_=std::map<size_t,Record>(), 
+        size_t const index_=0 )
+      : output( output_ ), control( control_ ), index( index_ )
       {}
 
     //! @brief Assignment operator
     Experiment& operator=
       ( Experiment const& exp )
       {
-        inputs  = exp.inputs;
-        outputs = exp.outputs;
+        output   = exp.output;
+        control  = exp.control;
+        index    = exp.index;
         return *this;
       }
 
-    //! @brief Vector of input values
-    std::vector<double> inputs;
-
     //! @brief Map of output measurements
-    std::map<size_t,Record> outputs;
+    std::map<size_t,Record> output;
+
+    //! @brief Vector of control values
+    std::vector<double> control;
+
+    //! @brief Model index
+    size_t index;
   };
 
 protected:
 
-  //! @brief pointer to DAG of equation
+  //! @brief Pointer to DAG of equation
   FFGraph* _dag;
 
-  //! @brief Size of model output
-  size_t _ny;
+  //! @brief Number of models
+  size_t _nm;
 
-  //! @brief Size of experimental control
-  size_t _nu;
+  //! @brief Size of model outputs
+  std::vector<size_t> _ny;
 
-  //! @brief Size of model parameter
+  //! @brief Size of experimental controls
+  std::vector<size_t> _nu;
+
+  //! @brief Size of model parameters
   size_t _np;
 
   //! @brief Size of model constants
@@ -122,13 +125,16 @@ protected:
   size_t _nd;
 
   //! @brief vector of model outputs
-  std::vector<FFVar> _vOUT;
+  std::vector<std::vector<FFVar>> _vOUT;
+
+  //! @brief vector of experimental controls
+  std::vector<std::vector<FFVar>> _vCON;
+
+  //! @brief vector of model constants
+  std::vector<FFVar> _vCST;
 
   //! @brief vector of model parameters
   std::vector<FFVar> _vPAR;
-
-  //! @brief vector of experimental controls
-  std::vector<FFVar> _vCON;
 
   //! @brief vector of model parameter lower bounds
   std::vector<double> _vPARLB;
@@ -136,17 +142,11 @@ protected:
   //! @brief vector of model parameter upper bounds
   std::vector<double> _vPARUB;
 
-  //! @brief vector of model parameter guesses
-  std::vector<double> _vPARVAL;
-
   //! @brief matrix of model parameter scaling factors
   arma::mat _mPARSCA;
 
-  //! @brief vector of model constants
-  std::vector<FFVar> _vCST;
-
   //! @brief vector of experimental data: 
-  std::vector<Experiment> _vDAT;
+  std::vector<std::vector<Experiment>> _vDAT;
 
   //! @brief vector of cost regularization terms
   std::vector<FFVar> _vREG;
@@ -158,7 +158,7 @@ public:
 
   //! @brief Class constructor
   BASE_PAREST()
-    : _dag(nullptr), _ny(0), _nu(0), _np(0), _nc(0), _ng(0), _nd(0)
+    : _dag(nullptr), _nm(0), _np(0), _nc(0), _nr(0), _ng(0), _nd(0)
     {}
 
   //! @brief Class destructor
@@ -175,23 +175,23 @@ public:
     ( FFGraph& dag )
     { _dag = &dag; }
 
+  //! @brief Get number of models
+  size_t nm
+    ()
+    const
+    { return _nm; }
+
   //! @brief Get size of model outputs
   size_t ny
-    ()
+    ( size_t m=0 )
     const
-    { return _ny; }
+    { return m<_ny.size()? _ny[m]: 0; }
 
-  //! @brief Get size of experimental controls
+  //! @brief Get size of model controls
   size_t nu
-    ()
+    ( size_t m=0 )
     const
-    { return _nu; }
-
-  //! @brief Get size of model parameters
-  size_t np
-    ()
-    const
-    { return _np; }
+    { return m<_nu.size()? _nu[m]: 0; }
 
   //! @brief Get size of model constants
   size_t nc
@@ -199,51 +199,109 @@ public:
     const
     { return _nc; }
 
+  //! @brief Get size of model parameters
+  size_t np
+    ()
+    const
+    { return _np; }
+
   //! @brief Get size of cost regularizations
   size_t nr
     ()
     const
-    { return _vREG.size(); }
+    { return _nr; }
 
   //! @brief Get size of model constraints
   size_t ng
     ()
     const
-    { return std::get<0>(_vCTR).size(); }
+    { return _ng; }
 
-  //! @brief Set model outputs for single model
-  void set_model
-    ( std::vector<FFVar> const& Y )
+  //! @brief Get total number of experiments
+  size_t nd
+    ()
+    const
+    { return _nd; }
+
+  //! @brief Reset model
+  void reset_model
+    ()
     {
-      assert( !Y.empty() );
-      _ny = Y.size();
-      _vOUT = Y;
+      _vOUT.clear();
+      _vCON.clear();
+      _ny.clear();
+      _nu.clear();
     }
 
-  //! @brief Set nominal model parameters and parameter scaling (matrix format)
-  void set_parameters
+  //! @brief Set model
+  void add_model
+    ( std::vector<FFVar> const& Y, std::vector<FFVar> const& U=std::vector<FFVar>(),
+      size_t const m=0 )
+    {
+      assert( !Y.empty() );
+      if( m >= _nm ){
+        _vOUT.resize( m+1 );
+        _vCON.resize( m+1 );
+        _ny.resize( m+1, 0 );
+        _nu.resize( m+1, 0 );
+        _nm = _vOUT.size();
+      }
+      _ny[m]   = Y.size();
+      _nu[m]   = U.size();
+      _vOUT[m] = Y;
+      _vCON[m] = U;
+    }
+
+  //! @brief Get model outputs
+  std::vector<FFVar> const& var_output
+    ( size_t const m=0 )
+    const
+    { assert( m<_ny.size() ); return _vOUT[m]; }
+
+  //! @brief Get experimental controls
+  std::vector<FFVar> const& var_control
+    ( size_t const m=0 )
+    const
+    { assert( m<_nu.size() ); return _vCON[m]; }
+
+  //! @brief Set model constants
+  void set_constant
+    ( std::vector<FFVar> const& C )
+    {
+      _nc   = C.size();
+      _vCST = C;
+    }
+    
+  //! @brief Get model constants
+  std::vector<FFVar> const& var_constant
+    ()
+    const
+    { return _vCST; }
+
+  //! @brief Set nominal model parameters and bounds
+  void set_parameter
     ( std::vector<FFVar> const& P,
       std::vector<double> const& PLB,
       std::vector<double> const& PUB,
       arma::mat const& scaP )
     {
-      set_parameters( P, PLB, PUB );
+      set_parameter( P, PLB, PUB );
       if( scaP.n_rows == P.size() && scaP.n_cols == P.size() ) _mPARSCA = scaP;
     }
 
-  //! @brief Set nominal model parameters and parameter scaling (vector format)
-  void set_parameters
+  //! @brief Set model parameters and bounds
+  void set_parameter
     ( std::vector<FFVar> const& P,
       std::vector<double> const& PLB=std::vector<double>(),
       std::vector<double> const& PUB=std::vector<double>(),
       std::vector<double> const& scaP=std::vector<double>() )
     {
-      assert( !P.empty() && (!PLB.size() || PLB.size() == P.size()) && (!PUB.size() || PUB.size() == P.size()) );
+      assert( !P.empty() && (!PLB.size() || PLB.size() == P.size())
+                         && (!PUB.size() || PUB.size() == P.size()) );
       _np   = P.size();
       _vPAR = P;
       _vPARLB = PLB;
       _vPARUB = PUB;
-      _vPARVAL.clear();
 
       assert( scaP.empty() || scaP.size() == _np );
       _mPARSCA.reset();
@@ -251,60 +309,79 @@ public:
         _mPARSCA = arma::diagmat( arma::vec( scaP ) );
     }
 
-  //! @brief Retreive parameter scaling
-  arma::mat parameter_scaling
+  //! @brief Get model parameters
+  std::vector<FFVar> const& var_parameter
+    ()
+    const
+    { return _vPAR; }
+
+  //! @brief Get parameter scaling
+  arma::mat scaling_parameter
     ()
     const
     { 
       return _mPARSCA;
     }
 
-  //! @brief Set experimental controls
-  void set_controls
-    ( std::vector<FFVar> const& U )
+  //! @brief Reset experimental data
+  void reset_data
+    ()
     {
-      assert( !U.empty() );
-      _nu     = U.size();
-      _vCON   = U;
+      _vDAT.clear();
+      _nd = 0;
     }
 
-  //! @brief Set experimental controls
-  void set_constants
-    ( std::vector<FFVar> const& C )
+  //! @brief Add to experimental data
+  void add_data
+    ( Experiment const& EXP )
     {
-      assert( !C.empty() );
-      _nc     = C.size();
-      _vCST   = C;
+      assert( EXP.output.size() );
+      if( EXP.index >= _vDAT.size() )
+        _vDAT.resize( EXP.index+1 );
+      _vDAT[EXP.index].push_back( EXP );
+      for( auto const& [ k, RECk ] : EXP.output )
+        _nd += RECk.measurement.size();
     }
 
-  //! @brief Set experimental controls
+  //! @brief Add experimental data
+  void add_data
+    ( std::vector<Experiment> const& DAT )
+    {
+      for( auto const& EXP : DAT )
+        add_data( EXP );
+    }
+
+  //! @brief Set experimental data
   void set_data
-    ( std::vector<Experiment> const& D )
+    ( std::vector<Experiment> const& DAT )
     {
-      assert( !D.empty() );
-      _vDAT = D;
-      _nd   = 0;
-      for( auto const& EXP : _vDAT )
-        for( auto const& [ k, RECk ] : EXP.outputs )
-          _nd += RECk.measurements.size();
+      reset_data();
+      add_data( DAT );
     }
+
+  //! @brief Get experimental data
+  std::vector<std::vector<Experiment>> const& get_data
+    ()
+    const
+    { return _vDAT; }
 
   //! @brief Add regularisation term in estimation objective
   void add_regularization
     ( FFVar const& R )
     {
       _vREG.push_back( R );
+      _nr = _vREG.size();
     }
 
   //! @brief Reset regularisation term in estimation objective
   void reset_regularization
-    ( FFVar const& R )
+    ()
     {
       _vREG.clear();
     }
 
   //! @brief Get constraints
-  std::tuple< std::vector<FFVar>, std::vector<t_CTR>, std::vector<FFVar> > const& constraints
+  std::tuple< std::vector<FFVar>, std::vector<t_CTR>, std::vector<FFVar> > const& get_constraint
     ()
     const
     { return _vCTR; }
@@ -312,17 +389,20 @@ public:
   //! @brief Add constraint
   void add_constraint
     ( FFVar const& lhs, t_CTR const type, FFVar const& rhs=FFVar(0.) )
-    { std::get<0>(_vCTR).push_back( lhs  );
+    {
+      std::get<0>(_vCTR).push_back( lhs  );
       std::get<1>(_vCTR).push_back( type );
-      std::get<2>(_vCTR).push_back( rhs  ); }
+      std::get<2>(_vCTR).push_back( rhs  );
+      _ng = std::get<0>(_vCTR).size();
+    }
 
   //! @brief Reset constraints
-  void reset_constraints
+  void reset_constraint
     ()
     { std::get<0>(_vCTR).clear(); std::get<1>(_vCTR).clear(); std::get<2>(_vCTR).clear(); }
 
-  //! @brief Set uniform sample within bounds
-  static std::list<std::vector<double>> uniform_sample
+  //! @brief Sobol sampling within bounds
+  static std::list<std::vector<double>> sobol_sample
     ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB );
 
 private:
@@ -333,7 +413,7 @@ private:
 };
 
 inline std::list<std::vector<double>>
-BASE_PAREST::uniform_sample
+BASE_PAREST::sobol_sample
 ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB )
 {
   assert( NSAM && LB.size() && LB.size() == UB.size() );
