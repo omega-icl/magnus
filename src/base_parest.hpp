@@ -154,6 +154,16 @@ protected:
   //! @brief constraints (constraint lhs, type, constraint rhs)
   std::tuple< std::vector<FFVar>, std::vector<t_CTR>, std::vector<FFVar> > _vCTR;
 
+  //! @brief Add to experimental data
+  static void _add_data
+    ( std::vector<std::vector<Experiment>>& DAT, Experiment const& EXP )
+    {
+      assert( EXP.output.size() );
+      if( EXP.index >= DAT.size() )
+        DAT.resize( EXP.index+1 );
+      DAT[EXP.index].push_back( EXP );
+    }
+
 public:
 
   //! @brief Class constructor
@@ -335,10 +345,7 @@ public:
   void add_data
     ( Experiment const& EXP )
     {
-      assert( EXP.output.size() );
-      if( EXP.index >= _vDAT.size() )
-        _vDAT.resize( EXP.index+1 );
-      _vDAT[EXP.index].push_back( EXP );
+      _add_data( _vDAT, EXP );
       for( auto const& [ k, RECk ] : EXP.output )
         _nd += RECk.measurement.size();
     }

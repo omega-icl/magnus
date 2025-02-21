@@ -147,6 +147,7 @@ public:
     //! @brief Constructor
     Options():
       DISPLEVEL(1),
+      RNGSEED(-1),
       NLPSLV()
       {
 #ifdef MC__USE_SNOPT
@@ -171,12 +172,15 @@ public:
     //! @brief Assignment operator
     Options& operator= ( Options const& options ){
         DISPLEVEL   = options.DISPLEVEL;
+        RNGSEED     = options.RNGSEED;
         NLPSLV      = options.NLPSLV;
         return *this;
       }
 
     //! @brief Verbosity level
-    int                      DISPLEVEL;    
+    int                      DISPLEVEL;
+    //! @brief Random-number generator seed. >=0: seed set to specified value; <0: seed set to a value drawn from std::random_device
+    int                      RNGSEED;
     //! @brief NLP gradient-based solver options
     typename NLP::Options    NLPSLV;
   } options;
@@ -276,7 +280,17 @@ public:
     ( double const& conf, std::vector<double> const& P0,
       std::vector<double> const& C0=std::vector<double>(), std::ostream& os=std::cout );
 
-  //! @brief Compute covariance matrix using bootstrapping
+  //! @brief Compute covariance matrix using bootstrapping around given data set
+  arma::mat cov_bootstrap
+    ( std::vector<std::vector<Experiment>> const& data, size_t const nsam,
+      std::ostream& os=std::cout );
+
+  //! @brief Compute covariance matrix using bootstrapping around given data set
+  arma::mat cov_bootstrap
+    ( std::vector<Experiment> const& data, size_t const nsam,
+      std::ostream& os=std::cout );
+
+  //! @brief Compute covariance matrix using bootstrapping around maximum likelihood fit
   arma::mat cov_bootstrap
     ( size_t const nsam, std::ostream& os=std::cout );
 
@@ -364,6 +378,11 @@ PAREST::setup
     _dag->insert( BASE_PAREST::_dag, _ng, std::get<0>(BASE_PAREST::_vCTR).data(), std::get<0>(_vCTR).data() );
     _dag->insert( BASE_PAREST::_dag, _ng, std::get<2>(BASE_PAREST::_vCTR).data(), std::get<2>(_vCTR).data() );
   }
+
+  if( options.RNGSEED < 0 )
+    arma::arma_rng::set_seed_random();
+  else
+    arma::arma_rng::set_seed( options.RNGSEED ); 
 
   stats.walltime_setup += stats.walltime( t_setup );
   stats.walltime_all   += stats.walltime( t_setup );
@@ -540,7 +559,8 @@ PAREST::cov_bootstrap
   }
 
   try{
-    _dag->eval( _wkOUT, 1, &_MLECrit, &MLERes, _np, _vPAR.data(), _MLEOpt.x.data(), _nc, _vCST.data(), _MLEOpt.p.data() );
+    _dag->eval( _wkOUT, 1, &_MLECrit, &MLERes, _np, _vPAR.data(), _MLEOpt.x.data(),
+                _nc, _vCST.data(), _MLEOpt.p.data() );
   }
   catch(...){
     return _CRSam;
@@ -557,6 +577,28 @@ PAREST::cov_bootstrap
       ++e;
     }
   }
+
+  return cov_bootstrap( vDAT0, nsam, os );
+}
+
+inline
+arma::mat
+PAREST::cov_bootstrap
+( std::vector<Experiment> const& data, size_t const nsam, std::ostream& os )
+{
+  std::vector<std::vector<Experiment>> vDAT0;
+  for( auto const& exp : data )
+    _add_data( vDAT0, exp );
+
+  return cov_bootstrap( vDAT0, nsam, os );
+}
+
+inline
+arma::mat
+PAREST::cov_bootstrap
+( std::vector<std::vector<Experiment>> const& data, size_t const nsam, std::ostream& os )
+{
+  _CRSam.reset();
 
   // Define MLE problem
   NLP PE;
@@ -575,21 +617,32 @@ PAREST::cov_bootstrap
   for( size_t isam=0; isam<nsam; ++isam ){
 
     // Add measurement noise
-    auto vDATn = vDAT0;
+    auto vDATn = data;
     auto mean = arma::vec( 1, arma::fill::zeros );
     auto var  = arma::mat( 1, 1, arma::fill::none );
-    for( size_t m=0; m<_nm; ++m ){
+    for( size_t m=0, e=0; m<_nm; ++m, e=0 ){
       for( auto& EXP : vDATn[m] ){
-        for( auto& [ k, RECk ] : EXP.output )
+        for( auto& [ k, RECk ] : EXP.output ){
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+          size_t r = 0;
+#endif
           for( auto& YMk : RECk.measurement ){
             var(0,0) = RECk.variance;
             arma::mat dYk = arma::mvnrnd( mean, var );
             YMk += dYk(0,0);
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+            std::cout << "YM(" << isam << ")[" << std::to_string(m) << "," << std::to_string(e) << "]["
+                      << std::to_string(k) << "][" << std::to_string(r++) << "] = "
+                      << YMk << std::endl;
+#endif
           }
+        }
+        ++e;
       }
     }
     
     // Update MLE objective - could also use set_obj_lazy - and solve from MLE estimate
+    FFMLE OpMLE;
     _MLECrit = 0.;
     for( size_t m=0; m<_nm; ++m ){
       if( !_ny[m] ) continue;

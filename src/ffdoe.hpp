@@ -5562,7 +5562,7 @@ const
     for( size_t i=0; i<nVar; ++i )
       vDer[k][i] = *vGradFIM[k*nVar+i];
 }
-
+/*
 ////////////////////////////////////////////////////////////////////////
 
 class FFMLE
@@ -6235,7 +6235,7 @@ const
   for( size_t i=0; i<nVar; ++i )
     vDer[0][i] = *ppResDer[i];
 }
-
+*/
 } // end namespace mc
 
 #endif

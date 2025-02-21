@@ -226,6 +226,40 @@ pyPAREST
  )
  .def(
    "cov_bootstrap",
+   []( PAREST& self, std::vector<std::vector<PAREST::Experiment>> const& data, size_t const nsam ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::mat covmat = self.cov_bootstrap( data, nsam );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 2;
+     size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
+     size_t strides[ndim]{elsize, covmat.n_rows * elsize};
+     return py::array_t<double>( shape, strides, covmat.memptr() );
+   },
+   py::return_value_policy::reference_internal,
+   "compute parameter covariance matrix using bootstrapping"
+ )
+ .def(
+   "cov_bootstrap",
+   []( PAREST& self, std::vector<PAREST::Experiment> const& data, size_t const nsam ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::mat covmat = self.cov_bootstrap( data, nsam );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 2;
+     size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
+     size_t strides[ndim]{elsize, covmat.n_rows * elsize};
+     return py::array_t<double>( shape, strides, covmat.memptr() );
+   },
+   py::return_value_policy::reference_internal,
+   "compute parameter covariance matrix using bootstrapping"
+ )
+ .def(
+   "cov_bootstrap",
    []( PAREST& self, size_t const nsam ){
      py::scoped_ostream_redirect stream(
        std::cout,                                // std::ostream&

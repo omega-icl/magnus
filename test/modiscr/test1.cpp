@@ -5,6 +5,7 @@
 #undef MC__NLPSLV_SNOPT_DEBUG_CALLBACK
 #undef MC__FFBREFF_DEBUG
 
+#include "parest.hpp"
 #include "modiscr.hpp"
 
 // The problem of finding an optimal design to discriminate between a cubic polynomial model
@@ -47,7 +48,7 @@ int main()
   Y2[0] = P2[0] + P2[1]*X[0] + P2[2]*pow(X[0],2) + P2[3]*pow(X[0],3);
 
   /////////////////////////////////////////////////////////////////////////
-  // Perform Initial Experiment
+  // Perform in-silico experiment from model #2
 
   std::list<std::pair<double,std::vector<double>>> prior_campaign
   {
@@ -63,7 +64,7 @@ int main()
   };
 
   std::vector<double> YVAR( { 1e-2 } ); // Output variance
-  std::list<std::pair<std::vector<double>,std::map<size_t,std::vector<double>>>> prior_meas;
+  std::vector<mc::PAREST::Experiment> prior_meas;
 
   std::vector<double> DY2(NY);
   std::vector<double> DP2NOM = { 1e0, 1e0, 0e0, 1e0 };
@@ -77,7 +78,9 @@ int main()
       DAG.eval( Y2, DY2, X, DX, P2, DP2NOM );
       std::cout << " | ";
       for( size_t k=0; k<NY; ++k ){
-        prior_meas.push_back( { DX, { { k, { DY2[k] } } } } );
+        prior_meas.push_back(
+          mc::PAREST::Experiment( DX, { { k, mc::PAREST::Record( { DY2[k] }, YVAR[0] ) } } )
+        );
         std::cout << std::setw(12) << DY2[k];
       }
       std::cout << std::endl;
@@ -88,70 +91,54 @@ int main()
   //return 0;
 
   /////////////////////////////////////////////////////////////////////////
-  // Boostrapped MLE calculations for Models #1 & #2
+  // Boostrapping for models #1 & #2 around in-silico experiment
+
+  size_t const NSAM = 128;//512;
+  
+  // Parameter estimation in model #1
+  mc::PAREST PE1;
+  PE1.options.RNGSEED = 123;
+  PE1.options.NLPSLV.DISPLEVEL = 0;
+  PE1.options.NLPSLV.MAXITER   = 40;
+  PE1.options.NLPSLV.FEASTOL   = 1e-6;
+  PE1.options.NLPSLV.OPTIMTOL  = 1e-6;
+  PE1.options.NLPSLV.GRADMETH  = mc::NLPSLV_SNOPT::Options::FSYM;
+  PE1.options.NLPSLV.GRADCHECK = false;
+  PE1.options.NLPSLV.MAXTHREAD = 0;
+
+  PE1.set_dag( DAG );
+  PE1.add_model( Y1, X );
+  PE1.set_data( prior_meas );
+  PE1.set_parameter( P1 );
+  PE1.setup();
+
+  std::vector<double> DP1 = { 0e0, 1e0 };
+  PE1.mle_solve( DP1 );
+  PE1.cov_bootstrap( prior_meas, NSAM );
+
+  // Parameter estimation in model #2
+  mc::PAREST PE2;
+  PE2.options = PE1.options;
+
+  PE2.set_dag( DAG );
+  PE2.add_model( Y2, X );
+  PE2.set_data( prior_meas );
+  PE2.set_parameter( P2 );
+  PE2.setup();
+
+  std::vector<double> DP2 = { 0e0, 0e0, 0e0, 1e0 };
+  PE2.mle_solve( DP2 );
+  PE2.cov_bootstrap( prior_meas, NSAM );
 
   // List of parameter samples from joint confidence region
   std::list<std::vector<double>> PSAM;
-
-  // Local optimization solver
-#ifdef MC__USE_SNOPT
-  mc::NLPSLV_SNOPT PE1;
-#else
-  mc::NLPSLV_IPOPT PE1;
-#endif
-  PE1.options.DISPLEVEL = 0;
-  PE1.options.MAXITER   = 40;
-  PE1.options.FEASTOL   = 1e-6;
-  PE1.options.OPTIMTOL  = 1e-6;
-  PE1.options.GRADMETH  = mc::NLPSLV_SNOPT::Options::FSYM;
-  PE1.options.GRADCHECK = false;
-  PE1.options.MAXTHREAD = 0;
-
-  std::vector<double> DP1 = { 0e0, 1e0 };
-  PE1.set_dag( &DAG );
-  PE1.set_var( P1 );
-
-#ifdef MC__USE_SNOPT
-  mc::NLPSLV_SNOPT PE2;
-#else
-  mc::NLPSLV_IPOPT PE2;
-#endif
-  PE2.options = PE1.options;
-
-  std::vector<double> DP2 = { 0e0, 0e0, 0e0, 1e0 };
-  PE2.set_dag( &DAG );
-  PE2.set_var( P2 );
-
-  mc::FFMLE OpMLE;
-
-  size_t const NSAM = 128;//512;
+  arma::mat const& CRSAM1 = PE1.crsam().t();
+  arma::mat const& CRSAM2 = PE2.crsam().t();
   for( size_t isam=0; isam<NSAM; ++isam ){
-
-    // Add measurement noise
-    auto prior_meas_noise = prior_meas;
-    arma::vec YM( NY, arma::fill::zeros );
-    arma::mat YC( NY, NY, arma::fill::zeros ); YC.diag() = arma::vec( YVAR );
-    for( auto& [DX,MAPY] : prior_meas_noise ){
-      arma::mat YNOISE = arma::mvnrnd( YM, YC );
-      for( auto& [k,VECYk] : MAPY )
-        for( size_t k=0; k<NY; ++k )
-          VECYk[0] += YNOISE(k);
-    }
- 
-    mc::FFVar FMLE1 = OpMLE( P1.data(), &DAG, &P1, &X, &Y1, &YVAR, &prior_meas_noise );
-    PE1.set_obj( mc::BASE_OPT::MIN, FMLE1 );
-    PE1.setup();
-    PE1.solve( DP1.data() );
-    //std::cout << "PARAMETER ESTIMATION SOLUTION:\n" << PE1.solution();
-    PSAM.push_back( PE1.solution().x );
-
-    mc::FFVar FMLE2 = OpMLE( P2.data(), &DAG, &P2, &X, &Y2, &YVAR, &prior_meas_noise );
-    PE2.set_obj( mc::BASE_OPT::MIN, FMLE2 );
-    PE2.setup();
-    PE2.solve( DP2.data() );
-    //std::cout << "PARAMETER ESTIMATION SOLUTION:\n" << PE2.solution();
-    PSAM.back().insert( PSAM.back().end(), PE2.solution().x.cbegin(), PE2.solution().x.cend() );
-    //PSAM.back().insert( PSAM.back().end(), DP2NOM.cbegin(), DP2NOM.cend() );
+    std::vector<double> rec;
+    rec.insert( rec.end(), CRSAM1.colptr(isam), CRSAM1.colptr(isam)+NP1 );
+    rec.insert( rec.end(), CRSAM2.colptr(isam), CRSAM2.colptr(isam)+NP2 );
+    PSAM.push_back( rec );
 
     std::cout << std::scientific << std::setprecision(5);
     std::cout << isam << "  ";
