@@ -97,7 +97,6 @@ IVP.set_constant( [I0, X0, N0, q0, f0] )
 IVP.set_state( [X, N, q, f] )
 
 timegrid = np.linspace( 0, 252, 22 ).tolist()
-timegrid.insert( 1, 1e-3 ) # extra timepoint to account for initial measurements
 print( timegrid )
 IVP.set_time( timegrid ) # measurement times every 12 h
 
@@ -131,9 +130,9 @@ IVP.set_initial( [ X0, N0, q0, f0] )
 Y = [ X, N, q, f, YII ]
 F = []
 for k in range(len(timegrid)):
-  F.append( [ pymc.FFVar(0) for i in range(k*len(Y)) ] + Y + [ pymc.FFVar(0) for i in range((len(timegrid)-k-2)*len(Y)) ] )
+  F.append( { k*len(Y)+i: Y[i] for i in range(len(Y)) } )
 IVP.set_function( F )
-#print( IVP.eqn_function )
+print( IVP.eqn_function )
 
 IVP.setup()
 
@@ -394,9 +393,9 @@ PE.set_data( Data );
 
 
 PE.setup()
-#PE.mle_solve( [0.36, 0.0, 2.69, 19.6, 0.8, 91.2, 100, 6.69, 7.53, 0.001, 0.0, 196.4, -0.456, 9.90, 0.136] )
+PE.mle_solve( [0.36, 0.0, 2.69, 19.6, 0.8, 91.2, 100, 6.69, 7.53, 0.001, 0.0, 196.4, -0.456, 9.90, 0.136] )
 #PE.mle_solve( [0.443, 0.0, 2.850, 19.91, 1.64, 111.8, 250, 6.58, 7.35, 0.0002, 0.0, 260.0, -0.459, 11.05, 0.146] )
-PE.mle_solve( 16 )
+#PE.mle_solve( 16 )
 #print( PE.mle )
 
 

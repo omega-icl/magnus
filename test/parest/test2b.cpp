@@ -156,10 +156,67 @@ int main()
   //PE.mle_solve( 10, C0 );
   auto MLEOPT   = PE.mle();
   auto CHI2TEST = PE.chi2_test( 0.95 );
-  auto BCOV     = PE.cov_bootstrap( 200 );
-  auto LCOV     = PE.cov_linearized();
-  auto CINTT    = PE.conf_interval( LCOV, 0.95, "T" );
-  auto CELLF    = PE.conf_ellipsoid( LCOV, 0, 1, 0.95, "F" );
+  //auto BCOV     = PE.cov_bootstrap( 200 );
+  //auto LCOV     = PE.cov_linearized();
+  //auto CINTT    = PE.conf_interval( LCOV, 0.95, "T" );
+  //auto CELLF    = PE.conf_ellipsoid( LCOV, 0, 1, 0.95, "F" );
+
+  /////////////////////////////////////////////////////////////////////////
+  // Add new experiment
+
+  std::vector<mc::PAREST::Experiment> Data2
+  { { { 6.0 }, { {  0, { { 9.99 }, 1e-2 } },
+                 {  1, { { 9.96 }, 1e-2 } },
+                 {  2, { { 9.93 }, 1e-2 } },
+                 {  3, { { 9.89 }, 1e-2 } },
+                 {  4, { { 9.80 }, 1e-2 } },
+                 {  5, { { 9.69 }, 1e-2 } },
+                 {  6, { { 9.55 }, 1e-2 } },
+                 {  7, { { 9.40 }, 1e-2 } }, }, 1 } };
+
+  const unsigned NS2 = 8;  // Time stages in experiment 2
+  std::vector<double> tk2( NS2+1 );
+  tk2[0] = 0.;
+  for( unsigned k=0; k<NS2; k++ ) tk2[k+1] = tk2[k] + 1e0/12e0; // [day]
+
+  mc::FFVar S02( &DAG, "S02" ); // initial substrate in experiment 2
+  std::vector<mc::FFVar> C2{ f, y, S02, D0 }; // Constants of experiment 2
+  std::vector<mc::FFVar> IC2( { B0, S02, D0 } );   // Initial value in experiment 2
+
+  std::vector<std::map<size_t,mc::FFVar>> FCT2( NS2+1 );  // State functions
+  for( unsigned s=0; s<NS2; s++ ) FCT2[s+1] = { { s, D } };
+//  for( unsigned s=0; s<NS2+1; s++ ){
+//    std::cout << " FCT2[" << s << "]: ";
+//    for( auto const& [i,FCT2si] : FCT2[s] )
+//      std::cout << "{ " << i << ": " << FCT2si << "} ";
+//    std::cout << std::endl;
+//  }
+  IVP.set_function( FCT2 );
+
+  IVP.set_time( tk2 );
+  IVP.set_constant( C2 );
+  IVP.set_initial( IC2 );
+  IVP.setup();
+
+//  IVP.options.DISPLAY = 1;
+//  IVP.solve_state( MLEOPT.x, MLEOPT.p );
+//  IVP.options.DISPLAY = 0;
+
+  std::vector<mc::FFVar> Y2(NY*NS2);
+  for( unsigned int j=0; j<NY*NS2; j++ ) Y2[j] = OpODE( j, NP, P.data(), NC, C2.data(), &IVP );
+  //std::cout << DAG;
+
+  /////////////////////////////////////////////////////////////////////////
+  // Perform MLE calculation again
+
+  PE.add_model( Y2, { S02 }, 1 );
+  PE.add_data( Data2 );
+
+  PE.setup();
+  PE.mle_solve( P0, C0 );
+  //PE.mle_solve( 10, C0 );
+  auto MLEOPT2   = PE.mle();
+  auto CHI2TEST2 = PE.chi2_test( 0.95 );
 
   return 0;
 }

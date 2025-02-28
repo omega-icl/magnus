@@ -605,8 +605,12 @@ const
   size_t e = 0;
   for( auto const& EXP : *_DAT ){
     for( auto const& [ k, RECk ] : EXP.output )
-      for( auto const& YMk : RECk.measurement )
+      for( auto const& YMk : RECk.measurement ){
         MLE += sqr( YMk - _DOUT[e][k] ) / RECk.variance;
+#ifdef MC__FFBRCRIT_DEBUG
+        std::cout << "Exp " << e << " Rec " << k << ": " << YMk << " " << _DOUT[e][k] << std::endl;
+#endif
+      }
     ++e;
   }
   MLE *= 5e-1;
