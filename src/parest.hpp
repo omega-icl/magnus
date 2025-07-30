@@ -415,7 +415,7 @@ PAREST::mle_solve
   }
   FFLin<I> OpSum;
   if( _nr )
-    PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
+    PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG, 1. ) );
   else
     PE.set_obj( mc::BASE_OPT::MIN, _MLECrit );
     
@@ -464,7 +464,7 @@ PAREST::mle_solve
   }
   FFLin<I> OpSum;
   if( _nr )
-    PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
+    PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG, 1. ) );
   else
     PE.set_obj( mc::BASE_OPT::MIN, _MLECrit );
     
@@ -665,7 +665,7 @@ PAREST::cov_bootstrap
       _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &vDATn[m] );
     }
     if( _nr )
-      PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG ) );
+      PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG, 1. ) );
     else
       PE.set_obj( mc::BASE_OPT::MIN, _MLECrit );
     
@@ -772,7 +772,7 @@ PAREST::cov_linearized
   if( _nr ){
     dagmle.insert( BASE_PAREST::_dag, _nr, BASE_PAREST::_vREG.data(), vREGMLE.data() );
     FFLin<I> OpSum;
-    FMLE -= OpSum( vREGMLE );
+    FMLE -= OpSum( vREGMLE, 1. );
   }
   
   // Add active general constraints

@@ -796,7 +796,7 @@ const
 {
 
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
 
   size_t const NUNC  = _vPARVAL.size();
   std::vector<FFVar const*> vBRCrit( NUNC );
@@ -814,7 +814,7 @@ MODISCR::_effort_set_BRAverse
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
 
   size_t const NUNC  = _vPARVAL.size();
   std::vector<FFVar> DELTA( NUNC );

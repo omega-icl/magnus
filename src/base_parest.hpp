@@ -15,6 +15,7 @@
 #include <armadillo>
 
 #include "ffunc.hpp"
+#include "base_sampling.hpp"
 
 namespace mc
 {
@@ -25,7 +26,8 @@ namespace mc
 //! problems
 ////////////////////////////////////////////////////////////////////////
 class BASE_PAREST
-: public virtual BASE_OPT
+: public virtual BASE_OPT,
+  public virtual BASE_SAMPLING
 {
 public:
 
@@ -85,7 +87,7 @@ public:
         return *this;
       }
 
-    //! @brief Map of output measurements
+    //! @brief Map of output measurements <output index, record>
     std::map<size_t,Record> output;
 
     //! @brief Vector of control values
@@ -145,7 +147,7 @@ protected:
   //! @brief matrix of model parameter scaling factors
   arma::mat _mPARSCA;
 
-  //! @brief vector of experimental data: 
+  //! @brief vector of experimental data: [model index][experiment index]
   std::vector<std::vector<Experiment>> _vDAT;
 
   //! @brief vector of cost regularization terms
@@ -407,18 +409,18 @@ public:
   void reset_constraint
     ()
     { std::get<0>(_vCTR).clear(); std::get<1>(_vCTR).clear(); std::get<2>(_vCTR).clear(); }
-
+/*
   //! @brief Sobol sampling within bounds
   static std::list<std::vector<double>> sobol_sample
     ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB );
-
+*/
 private:
 
   //! @brief Private methods to block default compiler methods
   BASE_PAREST( BASE_PAREST const& ) = delete;
   BASE_PAREST& operator=( BASE_PAREST const& ) = delete;
 };
-
+/*
 inline std::list<std::vector<double>>
 BASE_PAREST::sobol_sample
 ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB )
@@ -441,7 +443,7 @@ BASE_PAREST::sobol_sample
 
   return LSAM;
 }
-
+*/
 } // end namescape mc
 
 #endif

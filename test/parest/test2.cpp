@@ -49,7 +49,7 @@ int main()
   IC[2] = D0;
 
   std::vector<std::map<size_t,mc::FFVar>> FCT(NS+1);  // State functions
-  for( unsigned s=0; s<=NS; s++ ) FCT[s] = { { s, D } };
+  for( unsigned s=0; s<=NS; s++ ) FCT[s] = { { s, D } }; // 1 record in time stage s is for output s
 
   mc::ODESLVS_CVODES IVP;
   IVP.options.INTMETH   = mc::BASE_CVODES::Options::MSBDF;//MSADAMS;//
@@ -77,8 +77,8 @@ int main()
   IVP.setup();
 
   mc::FFODE OpODE;
-  std::vector<mc::FFVar> Y(NY*(NS+1));
-  for( unsigned int j=0; j<NY*(NS+1); j++ ) Y[j] = OpODE( j, NP, P.data(), NC, C.data(), &IVP );
+  std::vector<mc::FFVar> Y(NS+1);
+  for( unsigned int j=0; j<NS+1; j++ ) Y[j] = OpODE( j, NP, P.data(), NC, C.data(), &IVP );
   //std::cout << DAG;
 
   /////////////////////////////////////////////////////////////////////////

@@ -78,12 +78,12 @@ int main()
   IC[2] = IC[4] = IC[6] = IC[7] = IC[8] = IC[9] = 0e0;
 
   const size_t NY = 4;  // Number of outputs
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
+  std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
   for( size_t i=0; i<NS; i++ ){
-    FCT[i][NY*i]   = CSM1;
-    FCT[i][NY*i+1] = CD;
-    FCT[i][NY*i+2] = CSM2;
-    FCT[i][NY*i+3] = CP;
+    FCT[i+1][NY*i]   = CSM1;
+    FCT[i+1][NY*i+1] = CD;
+    FCT[i+1][NY*i+2] = CSM2;
+    FCT[i+1][NY*i+3] = CP;
   }
 
   mc::ODESLVS_CVODES IVP;
@@ -118,7 +118,7 @@ int main()
   std::vector<double> dP, dC;
   dP.assign( { 1.09e-1*36e2, 9.33e0, 3.39e-3*36e2, 1.09e-6*36e2, 1.17e-5*36e2,
                1.93e-6*36e2, 1.87e-8*36e2 } );
-/*
+
   /////////////////////////////////////////////////////////////////////////
   // Simulate model
 
@@ -129,8 +129,8 @@ int main()
   for( unsigned i=0, k=0; i<NS; i++ )
     for( unsigned j=0; j<NY; j++, k++ )
       std::cout << "Y[" << i << "][" << j << "] = " << dY[k] << std::endl;
-  return 0;
-*/
+  //return 0;
+
   /////////////////////////////////////////////////////////////////////////
   // Perform MBDOE
 
@@ -182,9 +182,9 @@ int main()
   DOE.options.NLPSLV.FCTPREC     = 1e-7;
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_parameters( P, dP );//, dP ); // scaling with nominal values
-  //DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
-  DOE.set_controls( C, CLB, CUB );
+  DOE.set_parameter( P, dP );//, dP ); // scaling with nominal values
+  //DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
+  DOE.set_control( C, CLB, CUB );
 /*
   std::list<std::pair<double,std::vector<double>>> prior_campaign
   {
@@ -198,19 +198,19 @@ int main()
 */
   // Solve MBDOE
   DOE.setup();
-  DOE.sample_supports( NCSAM );
+  DOE.sample_support( NCSAM );
   DOE.combined_solve( NEXP );
   //DOE.effort_solve( NEXP );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( NEXP );//, DOE.efforts() );
-  //DOE.gradient_solve( DOE.efforts(), false );//true );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( NEXP );//, DOE.effort() );
+  //DOE.gradient_solve( DOE.effort(), false );//true );
   //DOE.file_export( "test2" );
   auto&& campaign = DOE.campaign();
   //arma::mat&& PSCA = DOE.parameter_scaling();
   //std::cout << "FIM SCALING:\n" << PSCA;
   //return 0;
 
-  DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) );//, PSCA );
+  DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) );//, PSCA );
   DOE.options.CRITERION = mc::EXPDES::BRISK;
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();
@@ -226,7 +226,7 @@ int main()
   DOE.setup();
   DOE.evaluate_design( campaign, "DOPT-AVERSE" );
 
-  //return 0;
+  return 0;
   
   /////////////////////////////////////////////////////////////////////////
   // Confidence analysis

@@ -64,11 +64,11 @@ int main()
 
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_controls( X, XLB, XUB );
-  DOE.set_parameters( P, DOE.uniform_sample( NSAM, PLB, PUB ) );
+  DOE.set_control( X, XLB, XUB );
+  DOE.set_parameter( P, DOE.uniform_sample( NSAM, PLB, PUB ) );
 
   DOE.setup();
-  DOE.sample_supports( 256 );//512 );
+  DOE.sample_support( 256 );//512 );
 /*
   size_t i=0;
   for( auto const& vout : DOE.output_samples().front() )
@@ -77,8 +77,8 @@ int main()
 
   //DOE.combined_solve( 5 );
   DOE.effort_solve( 6 );//, false );
-  DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( 5, DOE.efforts() );
+  DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( 5, DOE.effort() );
   //DOE.file_export( "test0b" );
   auto campaign = DOE.campaign();
 

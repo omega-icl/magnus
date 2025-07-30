@@ -6,7 +6,7 @@
 \page page_EXPDES Model-based Design of Experiments with MC++
 \author Benoit Chachuat <tt>(b.chachuat@imperial.ac.uk)</tt>
 \version 2.0
-\date 2024
+\date 2025
 \bug No known bugs.
 */
 
@@ -41,6 +41,7 @@
 #endif
 
 #include "minlpslv.hpp"
+#include "nsfeas.hpp"
 
 #include "base_mbdoe.hpp"
 
@@ -58,7 +59,8 @@ namespace mc
 //! model parameter precision using MC++, CRONOS and CANON
 ////////////////////////////////////////////////////////////////////////
 class EXPDES
-: public virtual BASE_MBDOE
+: public virtual BASE_MBDOE,
+  protected virtual NSFEAS
 {
 
 protected:
@@ -109,6 +111,9 @@ private:
 
   //! @brief local copy of model outputs
   std::vector<FFVar> _vOUT;
+
+  //! @brief local copy of model constraints
+  std::vector<FFVar> _vCTR;
   
   //! @brief vector of FIM entries
   std::vector<FFVar> _vFIM;
@@ -159,12 +164,26 @@ public:
   struct Options
   {
     //! @brief Constructor
-    Options():
-      CRITERION(BASE_MBDOE::DOPT), RISK(NEUTRAL), CVARTHRES(0.25),
-      UNCREDUC(1e-2), FIMSTOL(1e-7), IDWTOL(1e-3),
-      MINDIST(1e-6), MAXITER(4), TOLITER(1e-4), DISPLEVEL(0),
-      MINLPSLV(), NLPSLV()
+    Options()
+      : MINLPSLV(), NLPSLV()
+      { reset(); }
+
+    //! @brief Reset to default options
+    void reset
+      ()
       {
+        CRITERION                   = BASE_MBDOE::DOPT;
+        RISK                        = NEUTRAL;
+        CVARTHRES                   = 0.25;
+        UNCREDUC                    = 1e-2;
+        FIMSTOL                     = 1e-7;
+        IDWTOL                      = 1e-3;
+        FEASTHRES                   = 1e-1;
+        FEASPROP                    = 16;
+        MINDIST                     = 1e-6;
+        MAXITER                     = 4;
+        TOLITER                     = 1e-4;
+        DISPLEVEL                   = 0;
 #ifdef MC__USE_SNOPT
         NLPSLV.DISPLEVEL            = 0;
         NLPSLV.MAXITER              = 500;
@@ -215,6 +234,8 @@ public:
         UNCREDUC    = options.UNCREDUC;
         FIMSTOL     = options.FIMSTOL;
         IDWTOL      = options.IDWTOL;
+        FEASTHRES   = options.FEASTHRES;
+        FEASPROP    = options.FEASPROP;
         MINDIST     = options.MINDIST;
         MAXITER     = options.MAXITER;
         TOLITER     = options.TOLITER;
@@ -240,6 +261,10 @@ public:
     double                   FIMSTOL;
     //! @brief Tolerance for inverse distance weighting measure
     double                   IDWTOL;
+    //! @brief Percentile infeasibility threshold for constraint satisfaction
+    double                   FEASTHRES;
+    //! @brief number of proposals in nested sampling of constraints
+    size_t                   FEASPROP;
     //! @brief Minimal relative mean-absolute distance between support points after refinement
     double                   MINDIST;
    //! @brief Maximal iteration of effort-based and gradient-based solves
@@ -321,7 +346,7 @@ public:
       () const
       { return std::chrono::system_clock::now(); }
     //! @brief Get current time lapse with respect to start time point
-    std::chrono::microseconds walltime
+    std::chrono::microseconds lapse
       ( std::chrono::time_point<std::chrono::system_clock> const& start ) const
       { return std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::system_clock::now() - start ); }    
     //! @brief Convert microsecond ticks to time
@@ -340,7 +365,7 @@ public:
       std::ostream& os=std::cout );
 
   //! @brief Generate <a>NSAM</a> initial supports
-  bool sample_supports
+  bool sample_support
     ( size_t const NSAM, std::ostream& os=std::cout );
 
   //! @brief Solve effort-based exact experiment design with <a>NEXP</a> supports
@@ -365,13 +390,13 @@ public:
     ( std::string const& name );
 
   //! @brief Retrieve optimized efforts  
-  std::map<size_t,double> const& efforts
+  std::map<size_t,double> const& effort
     ()
     const
     { return _EOpt; }
 
   //! @brief Retrieve optimized supports
-  std::map<size_t,std::vector<double>> const& supports
+  std::map<size_t,std::vector<double>> const& support
     ()
     const
     { return _SOpt; }
@@ -388,13 +413,13 @@ public:
     const;
 
   //! @brief Retrieve sampled outputs
-  std::vector< std::vector< arma::vec > > const& output_samples
+  std::vector< std::vector< arma::vec > > const& output_sample
     ()
     const
     { return _vOUTSAM; }
 
-  //! @brief Retrieve sampled outputs
-  std::vector< std::vector< arma::mat > > const& fim_samples
+  //! @brief Retrieve sampled FIMs
+  std::vector< std::vector< arma::mat > > const& fim_sample
     ()
     const
     { return _vFIMSAM; }
@@ -423,6 +448,10 @@ protected:
   //! @brief Create local copy of output model for FIM prediction
   void _setup_fim
     ( size_t const ndxmod );
+
+  //! @brief Generate <a>NSAM</a> feasible supports
+  bool _sample_support_nsfeas
+    ( size_t const NSAM, std::ostream& os );
 
   //! @brief Generate output samples for <a>NSAM</a> initial supports
   bool _sample_out
@@ -480,7 +509,7 @@ protected:
       std::vector<double> const& CTOT0, std::ostream& os );
 
   //! @brief Evaluate output distance criterion
-  double _evaluate_ODist
+  std::pair<double,std::vector<double>> _evaluate_ODist
     ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
       std::vector<double> const& CTOT0, std::ostream& os );
 
@@ -568,8 +597,8 @@ EXPDES::setup
     throw Exceptions( Exceptions::BADCRIT );
   }
 
-  stats.walltime_setup += stats.walltime( t_setup );
-  stats.walltime_all   += stats.walltime( t_setup );
+  stats.walltime_setup += stats.lapse( t_setup );
+  stats.walltime_all   += stats.lapse( t_setup );
   return true;
 }
 
@@ -598,6 +627,20 @@ EXPDES::_setup_out
   for( size_t i=0; i<_ny; ++i )
     std::cout << "OUT[" << i << "] = " << exOUT[i] << std::endl;
 #endif
+
+  if( _ng ){
+    _vCTR.resize( _ng );
+    _dag->insert( BASE_MBDOE::_dag, _ng, BASE_MBDOE::_vCTR.data(), _vCTR.data() );
+
+#ifdef MAGNUS__EXPDES_SETUP_DEBUG
+    auto sgCTR = _dag->subgraph( _ng, _vCTR.data() );
+    std::vector<FFExpr> exCTR = FFExpr::subgraph( _dag, sgCTR ); 
+    for( size_t i=0; i<_ng; ++i )
+      std::cout << "CTR[" << i << "] = " << exCTR[i] << std::endl;
+#endif
+  }
+  else
+    _vCTR.clear();
 }
 
 inline
@@ -656,25 +699,44 @@ EXPDES::_setup_fim
 
 inline
 bool
-EXPDES::sample_supports
+EXPDES::_sample_support_nsfeas
+( size_t const NSAM, std::ostream& os )
+{
+  // Set nested sampling options
+  NSFEAS::options.DISPLEVEL = options.DISPLEVEL;
+  NSFEAS::options.FEASCRIT  = NSFEAS::Options::CVAR;
+  NSFEAS::options.FEASTHRES = options.FEASTHRES;
+  NSFEAS::options.NUMPROP   = options.FEASPROP;
+  NSFEAS::options.NUMLIVE   = NSAM;
+
+  NSFEAS::setup();
+  if( NSFEAS::sample( true, os ) != NSFEAS::STATUS::NORMAL
+   || NSFEAS::_liveCON.size() < NSAM )
+    return false;
+
+  if( options.DISPLEVEL )
+    NSFEAS::stats.display();
+  
+  _vCONSAM.clear();
+  _vCONSAM.reserve( NSAM );
+  for( auto const& [lkh,pcon] : NSFEAS::_liveCON ){
+    _vCONSAM.push_back( std::vector<double>( pcon, pcon+_nc ) );
+    if( _vCONSAM.size() < NSAM ) continue;
+    break;
+  }
+  return true;
+}
+
+inline
+bool
+EXPDES::sample_support
 ( size_t const NSAM, std::ostream& os )
 {
   auto&& t_samgen = stats.start();
 
   // Control samples
-  typedef boost::random::sobol_engine< boost::uint_least64_t, 64u > sobol64;
-  typedef boost::variate_generator< sobol64, boost::uniform_01< double > > qrgen;
-  sobol64 eng( _nc );
-  qrgen gen( eng, boost::uniform_01<double>() );
-  gen.engine().seed( 0 );
-
-  _vCONSAM.clear();
-  _vCONSAM.reserve( NSAM );
-  for( size_t s=0; s<NSAM; ++s ){
-    _vCONSAM.push_back( std::vector<double>( _nc ) );
-    for( size_t i=0; i<_nc; i++ )
-      _vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * gen();
-  }
+  if( !_ng ) uniform_sample( _vCONSAM, NSAM, _vCONLB, _vCONUB );
+  else if( !_sample_support_nsfeas( NSAM, os ) ) return false;
 
   // Observation samples
   bool flag = false;
@@ -697,8 +759,8 @@ EXPDES::sample_supports
   if( options.DISPLEVEL )
     os << std::endl;
 
-  stats.walltime_samgen += stats.walltime( t_samgen );
-  stats.walltime_all    += stats.walltime( t_samgen );
+  stats.walltime_samgen += stats.lapse( t_samgen );
+  stats.walltime_all    += stats.lapse( t_samgen );
   return flag;
 }
 
@@ -737,7 +799,7 @@ EXPDES::_sample_out
   if( options.DISPLEVEL )
     os << "(" << NUNC*(_ne0+NSAM) << ")"
        << std::right << std::fixed << std::setprecision(2)
-       << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
+       << std::setw(10) << stats.to_time( stats.lapse( tstart ) ) << " SEC" << std::flush;
 
   if( !NSAM
    || options.CRITERION == ODIST
@@ -789,7 +851,7 @@ EXPDES::_sample_out
   if( options.DISPLEVEL )
     os << "(" << _sPARSEL.size() << ")"
        << std::right << std::fixed << std::setprecision(2)
-       << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
+       << std::setw(10) << stats.to_time( stats.lapse( tstart ) ) << " SEC" << std::flush;
 
 #ifdef MAGNUS__EXPDES_SAMPLE_DEBUG
   std::cout << "PARSEL[" << _sPARSEL.size() << "]: ";
@@ -924,7 +986,7 @@ EXPDES::_sample_fim
   if( options.DISPLEVEL )
     os << "(" << NUNC*(_ne0+NSAM) << ")"
        << std::right << std::fixed << std::setprecision(2)
-       << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
+       << std::setw(10) << stats.to_time( stats.lapse( tstart ) ) << " SEC" << std::flush;
 
 #ifdef MAGNUS__EXPDES_SAMPLE_DEBUG
   size_t s=0;
@@ -961,7 +1023,7 @@ EXPDES::_sample_fim
 
   if( options.DISPLEVEL )
     os << std::right << std::fixed << std::setprecision(2)
-       << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
+       << std::setw(10) << stats.to_time( stats.lapse( tstart ) ) << " SEC" << std::flush;
 
   arma::mat PROJ = arma::orth( FIM, options.FIMSTOL );
 #ifdef MAGNUS__EXPDES_SAMPLE_DEBUG
@@ -1120,8 +1182,8 @@ EXPDES::_update_supports
   if( options.DISPLEVEL > 1 )
     os << std::endl;
 
-  stats.walltime_samgen += stats.walltime( t_samgen );
-  stats.walltime_all    += stats.walltime( t_samgen );
+  stats.walltime_samgen += stats.lapse( t_samgen );
+  stats.walltime_all    += stats.lapse( t_samgen );
   return true;
 }
 
@@ -1200,7 +1262,7 @@ EXPDES::_effort_set_BRisk
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );  
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );  
 
   FFBREff OpBRCrit;
   doe.set_obj( BASE_OPT::MIN, OpBRCrit( EFF, &_vOUTSAM, &_vEFFAP ) );
@@ -1213,7 +1275,7 @@ EXPDES::_effort_set_ODist
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );  
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );  
 
   size_t const NSUPP = _vCONSAM.size();
   //std::vector<FFVar> SEL( NSUPP*(NSUPP-1)/2 );
@@ -1253,12 +1315,18 @@ EXPDES::_effort_set_FIMNeutral
 ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF )
 const
 {
-
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
 
   FFFIMEff OpFIMEff;
+  FFVar const*const* ppFIMEff = OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP );
+
   size_t const NUNC  = _vPARVAL.size();
+  if( NUNC == 1 ){
+    doe.set_obj( BASE_OPT::MAX, *(ppFIMEff[0]) );
+    return;
+  }
+
   doe.set_obj( BASE_OPT::MAX, Sum( NUNC, OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP ), _vPARWEI.data() ) );
 }
 
@@ -1268,24 +1336,29 @@ EXPDES::_effort_set_FIMAverse
 ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF, std::vector<double>& E0 )
 const
 {
+  FFLin<I> Sum;
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
+
+  FFFIMEff OpFIMEff;
+  FFVar const*const* ppFIMEff = OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP );
+
   size_t const NUNC  = _vPARVAL.size();
+  if( NUNC == 1 ){
+    doe.set_obj( BASE_OPT::MAX, *(ppFIMEff[0]) );
+    return;
+  }
+
+  FFVar VaR( _dagdoe );
+  doe.add_var( VaR );//, -1e2, 1e2 );
+
   std::vector<FFVar> DELTA( NUNC );
   for( auto& Dk : DELTA )
     Dk.set( _dagdoe );
   doe.add_var( NUNC, DELTA.data(), 0e0 );//, 1e2 );
 
-  FFVar VaR( _dagdoe );
-  doe.add_var( VaR );//, -1e2, 1e2 );
-
-  FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF ) - (int)NEXP );
-
-  FFFIMEff OpFIMEff;
-  FFVar const*const* ppFIMEff = OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP );
+  doe.set_obj( BASE_OPT::MAX, VaR - Sum( DELTA, _vPARWEI ) / options.CVARTHRES );
   for( size_t s=0; s<NUNC; s++ )
     doe.add_ctr( BASE_OPT::LE, VaR - DELTA[s] - *(ppFIMEff[s]) );
-
-  doe.set_obj( BASE_OPT::MAX, VaR - Sum( DELTA, _vPARWEI ) / options.CVARTHRES );
 
   E0.insert( E0.end(), NUNC+1, 0e0 );
 }
@@ -1382,8 +1455,8 @@ EXPDES::effort_solve
     if( exact ) _display_design( "EFFORT-BASED EXACT DESIGN", _VOpt, _EOpt, _SOpt, os ); 
     else        _display_design( "EFFORT-BASED CONTINUOUS DESIGN", _VOpt, _EOpt, _SOpt, os ); 
 
-  stats.walltime_slvmip += stats.walltime( t_slvmip );
-  stats.walltime_all    += stats.walltime( t_slvmip );
+  stats.walltime_slvmip += stats.lapse( t_slvmip );
+  stats.walltime_all    += stats.lapse( t_slvmip );
 }
 
 inline
@@ -1446,7 +1519,8 @@ EXPDES::_evaluate_BRisk
 }
 
 inline
-double
+std::pair<double,std::vector<double>>
+//double
 EXPDES::_evaluate_ODist
 ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
   std::vector<double> const& CTOT0, std::ostream& os )
@@ -1465,29 +1539,30 @@ EXPDES::_evaluate_ODist
 
   // Define output distance criterion
   FFODISTCrit OpODCrit;
-  FFVar const*const* ppODCrit = OpODCrit( CTOT.data(), _dag, &_vPAR, &_vCON, &_vOUT, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP, options.IDWTOL );
-#ifdef MAGNUS__EXPDES_SOLVE_DEBUG
+  FFVar const*const* ppODCrit = OpODCrit( CTOT.data(), _dag, &_vPAR, &_vCON, &_vOUT, &_vCTR, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP, options.IDWTOL );
+#ifdef MAGNUS__EXPDES_EVAL_DEBUG
   _dagdoe->output( _dagdoe->subgraph( 1, ppODCrit[0] ), " ODISTCrit" );
 #endif
 
-  size_t const NSUP  = EOpt.size();
-  std::vector<double> DODCrit( NSUP );
-  std::vector<FFVar>  FODCrit( NSUP );
-  for( size_t s=0; s<NSUP; ++s )
+  size_t const NSUP = EOpt.size();
+  size_t const NUNC = _vPARVAL.size();
+  std::vector<double> DODCrit( NSUP*(1+_ng*NUNC) );
+  std::vector<FFVar>  FODCrit( NSUP*(1+_ng*NUNC) );
+  for( size_t s=0; s<NSUP*(1+_ng*NUNC); ++s )
     FODCrit[s] = *ppODCrit[s];
 
-  // Evaluate cost function
+  // Evaluate cost and any constraints
   _dagdoe->eval( FODCrit, DODCrit, CTOT, CTOT0 );
-#ifdef MAGNUS__EXPDES_SOLVE_DEBUG
+#ifdef MAGNUS__EXPDES_EVAL_GRADIENT
   double const TOL = 1e-3;
   for( size_t i=0; i<CTOT.size(); i++ ){
     auto CTOT0_pert = CTOT0;
     CTOT0_pert[i] = CTOT0[i] * ( 1 + TOL ) + TOL;
-    std::vector<double> DODCrit_pert( NSUP );
+    std::vector<double> DODCrit_pert( NSUP*(1+_ng*NUNC) );
     _dagdoe->eval( FODCrit, DODCrit_pert, CTOT, CTOT0_pert );
     std::cout << "d_CTOT[" << i << "] = " << (CTOT0_pert[i]-CTOT0[i]) << std::endl;
     std::cout << "grad OD[" << i << "] =";
-    for( size_t s=0; s<NSUP; ++s )
+    for( size_t s=0; s<NSUP*(1+_ng*NUNC); ++s )
       std::cout << "  " << (DODCrit_pert[s]-DODCrit[s]) / (CTOT0_pert[i]-CTOT0[i]);
     std::cout << std::endl;
   }
@@ -1497,14 +1572,63 @@ EXPDES::_evaluate_ODist
   _dagdoe->eval( FGRADODCrit, DGRADODCrit, CTOT, CTOT0 );
 #endif
 
+  // Distance criterion
   double ODIST = 0.;
   for( size_t e=0; e<NSUP; ++e )
     if( ODIST < DODCrit[e] ) ODIST = DODCrit[e];
-#ifdef MAGNUS__EXPDES_SOLVE_DEBUG
+#ifdef MAGNUS__EXPDES_EVAL_DEBUG
   std::cout << "ODIST = " << ODIST << std::endl;
 #endif
 
-  return ODIST;
+  // Constraint satisfaction
+  std::vector<double> DCTR;
+  if( _ng ){
+    DCTR.resize( NSUP );
+
+    for( size_t e=0; e<NSUP; ++e ){
+      // Return maximal constraint violation if unique scenario
+      if( NUNC == 1 ){
+        if( _ng == 1 )
+          DCTR[e] = DODCrit[NSUP+e]; 
+        else{
+#ifdef MAGNUS__EXPDES_EVAL_DEBUG
+          std::cout << "DODCrit[" << NSUP+e*_ng << ":" << NSUP+(e+1)*_ng-1 << "] = " << arma::rowvec( &DODCrit[NSUP+e*_ng], _ng, false );
+#endif
+          auto itMax = std::max_element( &DODCrit[NSUP+e*_ng], &DODCrit[NSUP+(e+1)*_ng] );
+          DCTR[e] = *itMax;
+        }
+#ifdef MAGNUS__EXPDES_EVAL_DEBUG
+        std::cout << "DCTR[" << e << "] = " << DCTR[e] << std::endl;
+#endif
+        continue;
+      }
+
+      // Conditional-value-at-risk
+      std::multimap<double,double> ResCTR;
+      for( size_t s=0; s<NUNC; ++s ){
+        auto itMax = std::max_element( &DODCrit[NSUP+e*_ng*NUNC+s*_ng], &DODCrit[NSUP+e*_ng*NUNC+(s+1)*_ng] );
+        ResCTR.insert( { -*itMax, _vPARWEI[s] } ); // ordered by largest (negative) violation first 
+      }
+
+      double PrMass = 0., VaR = 0.;
+      for( auto const& [Res,Pr] : ResCTR ){
+        VaR = Res;
+        if( PrMass + Pr > options.FEASTHRES ) break;
+        PrMass += Pr;
+      }
+      DCTR[e] = -VaR;
+
+      for( auto const& [Res,Pr] : ResCTR ){
+        if( Res > VaR ) break;
+        DCTR[e] += ( VaR - Res ) * Pr / options.FEASTHRES;
+      }
+#ifdef MAGNUS__EXPDES_EVAL_DEBUG
+      std::cout << "DCTR[" << e << "] = " << DCTR[e] << std::endl;
+#endif
+    }
+  }
+
+  return std::make_pair( ODIST, DCTR );
 }
 
 inline
@@ -1580,9 +1704,9 @@ EXPDES::_evaluate_FIMAverse
   // Evaluate cost function
   _dagdoe->eval( NUNC, FFIMCrit.data(), DFIMCrit.data(), CTOT.size(), CTOT.data(), CTOT0.data() );
 
-  std::map<double,double> SA;
+  std::multimap<double,double> SA;
   for( size_t s=0; s<NUNC; ++s )
-    SA[DFIMCrit[s]] = _vPARWEI[s];
+    SA.insert( { DFIMCrit[s], _vPARWEI[s] } );
 
   double prsum = 0., VaR = 0.;
   for( auto const& [crit,pr] : SA ){
@@ -1643,7 +1767,7 @@ EXPDES::evaluate_design
         break;
 
       case ODIST:
-        crit = _evaluate_ODist( EOpt, CTOT, CTOT0, os );
+        crit = _evaluate_ODist( EOpt, CTOT, CTOT0, os ).first;
         break;
       
       case AOPT:
@@ -1710,7 +1834,7 @@ EXPDES::_refine_set_ODist
     _sample_out( 0, os );
 
   // Define output distance objective
-  FFVar OD( _dagdoe );
+  FFVar OD =_dagdoe->add_var( "OD" );
   doeref.add_var( OD );
   doeref.set_obj( BASE_OPT::MIN, OD );
 
@@ -1720,15 +1844,55 @@ EXPDES::_refine_set_ODist
   else
     CTOT0.push_back( 0e0 );
 
+  size_t const NE = EOpt.size();
   FFODISTCrit OpODCrit;
-  FFVar const*const* ppODCrit = OpODCrit( CTOT.data(), _dag, &_vPAR, &_vCON, &_vOUT, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP, options.IDWTOL );
+  FFVar const*const* ppODCrit = OpODCrit( CTOT.data(), _dag, &_vPAR, &_vCON, &_vOUT, &_vCTR, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP, options.IDWTOL );
 #ifdef MAGNUS__EXPDES_SOLVE_DEBUG
-  _dagdoe->output( _dagdoe->subgraph( 1, ppODCrit[0] ), " ODISTCrit" );
+  //_dagdoe->output( _dagdoe->subgraph( 1, ppODCrit[0] ), " ODISTCrit" );
+  auto sgODCrit = _dagdoe->subgraph( NE, ppODCrit );
+  std::vector<FFExpr> exCTR = FFExpr::subgraph( _dagdoe, sgODCrit ); 
+  for( size_t i=0; i<NE; ++i )
+    std::cout << "ODISTCrit[" << i << "] = " << exCTR[i] << std::endl;
+  { std::cout << "Enter <1> to continue"; int dum; std::cin >> dum;}
 #endif
 
-  size_t const NS = EOpt.size();
-  for( size_t i=0; i<NS; i++ )
-    doeref.add_ctr( BASE_OPT::GE, OD - *ppODCrit[i] );
+  for( size_t e=0; e<NE; ++e )
+    doeref.add_ctr( BASE_OPT::LE, *ppODCrit[e] - OD );
+
+  // Define CVaR constraints
+  size_t const NG = _vCTR.size();
+  if( !_ng ) return;
+
+  // Single scenario case
+  size_t const NS = _vPARVAL.size();
+  if( NS == 1 ){
+    for( size_t e=0; e<NE; ++e )
+      for( size_t g=0; g<NG; ++g )
+        doeref.add_ctr( BASE_OPT::LE, *ppODCrit[NE+e*NG+g] );
+    return;    
+  }
+
+  // Same VaR and delta vector shared between constraints since CVaR is on the max violation
+  std::vector<FFVar> Dg   = _dagdoe->add_vars( NS, "Dg" );
+  FFVar VaRg = _dagdoe->add_var( "VaRg" );
+  doeref.add_var( Dg, 0e0 );//, 1e2 );
+  doeref.add_var( VaRg );//, -1e2, 1e2 );
+
+  // Append initial point for VaR and delta vector
+  //if( _ROpt.size() == NS+1 )
+  //  for( auto const& r0 : _ROpt ) CTOT0.push_back( r0 ); 
+  //else
+  CTOT0.resize( CTOT.size()+NS+1, 0e0 );
+
+  // Add CVaR linear constraints to DAG
+  FFLin<I> Sum;
+  for( size_t e=0; e<NE; ++e ){
+    for( size_t g=0; g<NG; ++g ){
+      doeref.add_ctr( BASE_OPT::LE, VaRg + Sum( NS, Dg.data(), _vPARWEI.data() ) / options.FEASTHRES );  // enforce CVaR constraint
+      for( size_t s=0; s<NS; s++ )
+        doeref.add_ctr( BASE_OPT::GE, VaRg + Dg[s] - *ppODCrit[NE+(e*NS+s)*NG+g] );
+    }
+  }
 }
 
 inline
@@ -1794,6 +1958,11 @@ EXPDES::_refine_set_FIMAverse
 #endif
 
   size_t const NUNC = _vPARVAL.size();
+  if( NUNC == 1 ){
+    doeref.set_obj( BASE_OPT::MAX, *ppFIMCrit[0] );
+    return;
+  }
+
   std::vector<FFVar> DELTA( NUNC );
   FFVar VaR( _dagdoe );
   for( auto& Dk : DELTA )
@@ -1823,9 +1992,7 @@ EXPDES::gradient_solve
   
   size_t const NSUP = EOpt.size();
   size_t const NCTOT = _nc * NSUP;
-  std::vector<FFVar> CTOT(NCTOT);  // Concatenated experimental controls
-  for( size_t i=0; i<NCTOT; i++ )
-    CTOT[i].set( _dagdoe );
+  std::vector<FFVar> CTOT = _dagdoe->add_vars(NCTOT,"C");  // Concatenated experimental controls
 
   std::vector<double> CTOT0, CTOTLB, CTOTUB;
   CTOT0.reserve(NCTOT);
@@ -1911,8 +2078,8 @@ EXPDES::gradient_solve
   if( options.DISPLEVEL )
     _display_design( "GRADIENT-BASED REFINED DESIGN", _VOpt, EOpt, _SOpt, os ); 
 
-  stats.walltime_slvnlp += stats.walltime( t_slvnlp );
-  stats.walltime_all    += stats.walltime( t_slvnlp );
+  stats.walltime_slvnlp += stats.lapse( t_slvnlp );
+  stats.walltime_all    += stats.lapse( t_slvnlp );
 }
 
 inline

@@ -5,7 +5,7 @@ include $(PATH_MAGNUS)/src/makeoptions.mk
 
 #####
 
-all : test0 test1 test1b test2 test3 test4 test5 test6 test7 test7b
+all : test0
 
 test% : test%.o
 	$(CPP) $< $(LIB_MAGNUS) -o $@
@@ -16,6 +16,6 @@ test% : test%.o
 #####
 
 clean:
-	rm -f test? test?b
+	rm -f test? test??
 	rm -f *.o *.out *.dat *.eps *.dot *.svg *.log *~
 

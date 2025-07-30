@@ -59,12 +59,12 @@ int main()
   IC[1] = 1e-1;
 
   const size_t NY = 2;  // Number of outputs
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
+  std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*(NS+1), 0. ) );  // State functions
   for( size_t i=0; i<NS; i++ ){
     if( !(i%2) ) continue; // measurement at the end of every other time stage
     std::cout << "Measurement at t=" << tk[i+1] << std::endl;
-    FCT[i][NY*i]   = y1;
-    FCT[i][NY*i+1] = y2;
+    FCT[i+1][NY*i]   = y1;
+    FCT[i+1][NY*i+1] = y2;
   }
 
   mc::ODESLVS_CVODES IVP;
@@ -117,7 +117,7 @@ int main()
   size_t const NEXP = 5;
 
   // Sampled parameters - uniform Sobol' sampling
-  size_t const NPSAM = 512; // 512
+  size_t const NPSAM = 128; // 512
   std::vector<double> PLB( NP ), PUB( NP );
 //  PLB[0] =  PUB[0] = 0.31;
 //  PLB[1] =  PUB[1] = 0.18;
@@ -164,21 +164,21 @@ int main()
 
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_controls( C, CLB, CUB );
-  DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
+  DOE.set_control( C, CLB, CUB );
+  DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
 
   // Solve MBDOE
   DOE.setup();
-  DOE.sample_supports( NCSAM );
+  DOE.sample_support( NCSAM );
   DOE.combined_solve( NEXP );
   //DOE.effort_solve( NEXP );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( NEXP );//, DOE.efforts() );
-  //DOE.gradient_solve( DOE.efforts(), false );//true );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( NEXP );//, DOE.effort() );
+  //DOE.gradient_solve( DOE.effort(), false );//true );
   //DOE.file_export( "test2" );
   auto campaign = DOE.campaign();
 
-  DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
+  DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
   DOE.options.CRITERION = mc::EXPDES::DOPT;
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();

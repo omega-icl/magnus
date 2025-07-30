@@ -5,7 +5,9 @@ include $(srcpath)/makeoptions.mk
 
 #####
 
-incobjs = ffest.hpp base_parest.hpp parest.hpp \
+incobjs = base_sampling.hpp \
+          fffeas.hpp base_mbfa.hpp nsfeas.hpp \
+          ffest.hpp base_parest.hpp parest.hpp \
           ffdoe.hpp base_mbdoe.hpp expdes.hpp modiscr.hpp
 binobjs = 
 libobjs = 

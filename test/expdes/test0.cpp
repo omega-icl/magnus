@@ -62,8 +62,8 @@ int main()
 
   DOE.set_dag( DAG );
   DOE.set_model( Y );//, YVAR );
-  DOE.set_controls( X, XLB, XUB );
-  DOE.set_parameters( P, DOE.uniform_sample( NSAM, PLB, PUB ), PSCA );
+  DOE.set_control( X, XLB, XUB );
+  DOE.set_parameter( P, DOE.uniform_sample( NSAM, PLB, PUB ), PSCA );
 
   std::list<std::pair<double,std::vector<double>>> prior_campaign
   {
@@ -73,12 +73,12 @@ int main()
 
 
   DOE.setup();
-  DOE.sample_supports( 50 );
+  DOE.sample_support( 50 );
   //DOE.combined_solve( 5, false ); // continuous design
   //auto CNTEFF = DOE.efforts();
   //DOE.combined_solve( 5, true, CNTEFF ); // exact design
-  //DOE.combined_solve( 5 );
-  DOE.effort_solve( 5 );//, false );
+  DOE.combined_solve( 5 );
+  //DOE.effort_solve( 5 );//, false );
   //DOE.gradient_solve( DOE.efforts(), true );
   //DOE.effort_solve( 5, DOE.efforts() );
   //DOE.file_export( "test0" );

@@ -15,6 +15,7 @@
 #include <armadillo>
 
 #include "ffunc.hpp"
+#include "base_mbfa.hpp"
 
 namespace mc
 {
@@ -25,23 +26,18 @@ namespace mc
 //! experiment (MBDoE) problems
 ////////////////////////////////////////////////////////////////////////
 class BASE_MBDOE
+: public virtual BASE_MBFA
 {
 protected:
 
-  //! @brief pointer to DAG of equation
-  FFGraph* _dag;
+  using BASE_MBFA::set_parameter;
+
 
   //! @brief Size of model candidates
   size_t _nm;
 
   //! @brief Size of model output
   size_t _ny;
-
-  //! @brief Size of model parameter
-  size_t _np;
-
-  //! @brief Size of experimental control
-  size_t _nc;
 
   //! @brief Size of prior experiments
   size_t _ne0;
@@ -55,26 +51,8 @@ protected:
   //! @brief vector of model weights
   std::vector<double> _vOUTWEI;
 
-  //! @brief vector of model parameters
-  std::vector<FFVar> _vPAR;
-
-  //! @brief vector of model parameter values
-  std::vector<std::vector<double>> _vPARVAL;
-
-  //! @brief vector of model parameter weights
-  std::vector<double> _vPARWEI;
-
   //! @brief matrix of model parameter scaling factors
   arma::mat _mPARSCA;
-
-  //! @brief vector of experimental controls
-  std::vector<FFVar> _vCON;
-
-  //! @brief vector of experimental control lower bounds
-  std::vector<double> _vCONLB;
-
-  //! @brief vector of experimental control upper bounds
-  std::vector<double> _vCONUB;
 
   //! @brief vector of prior experimental control values
   std::vector<std::vector<double>> _vCONAP;
@@ -95,22 +73,13 @@ public:
 
   //! @brief Class constructor
   BASE_MBDOE()
-    : _dag(nullptr), _nm(0), _ny(0), _np(0), _nc(0), _ne0(0)
+    : BASE_MBFA(),
+      _nm(0), _ny(0), _ne0(0)
     {}
 
   //! @brief Class destructor
   virtual ~BASE_MBDOE()
     {}
-
-  //! @brief Get pointer to DAG
-  FFGraph const& dag()
-    const
-    { return *_dag; }
-
-  //! @brief Set pointer to DAG
-  void set_dag
-    ( FFGraph& dag )
-    { _dag = &dag; }
 
   //! @brief Get size of model candidates
   size_t nm
@@ -123,18 +92,6 @@ public:
     ()
     const
     { return _ny; }
-
-  //! @brief Get size of experimental controls
-  size_t nc
-    ()
-    const
-    { return _nc; }
-
-  //! @brief Get size of model parameters
-  size_t np
-    ()
-    const
-    { return _np; }
 
   //! @brief Set model outputs for single model
   void set_model
@@ -149,7 +106,7 @@ public:
     }
 
   //! @brief Set model outputs for multiple candidate models
-  void set_models
+  void set_model
     ( std::list<std::vector<FFVar>> const& l_Y, std::vector<double> const& varY=std::vector<double>() )
     {
       assert( !l_Y.empty() && !l_Y.front().empty() );
@@ -170,7 +127,7 @@ public:
     }
 
   //! @brief Set model outputs for multiple candidate models
-  void set_models
+  void set_model
     ( std::list<std::pair<std::vector<FFVar>,double>> const& l_Y,
       std::vector<double> const& varY=std::vector<double>() )
     {
@@ -196,101 +153,69 @@ public:
     }
 
   //! @brief Set nominal model parameters and parameter scaling (matrix format)
-  void set_parameters
+  void set_parameter
     ( std::vector<FFVar> const& P, std::vector<double> const& valP,
       arma::mat const& scaP )
     {
-      set_parameters( P, valP );
+      BASE_MBFA::set_parameter( P, valP );
       _mPARSCA = scaP;
     }
 
   //! @brief Set nominal model parameters and parameter scaling (vector format)
-  void set_parameters
+  void set_parameter
     ( std::vector<FFVar> const& P, std::vector<double> const& valP,
       std::vector<double> const& scaP=std::vector<double>() )
     {
-      assert( !P.empty() && valP.size() == P.size() );
-      _np   = P.size();
-      _vPAR = P;
-      _vPARVAL.clear();
-      _vPARVAL.push_back( valP );
-      _vPARWEI.assign( 1, 1. );
+      BASE_MBFA::set_parameter( P, valP );
 
       assert( scaP.empty() || scaP.size() == _np );
       _mPARSCA.reset();
       if( !scaP.empty() )
         _mPARSCA = arma::diagmat( arma::vec( scaP ) );
-        //_mPARSCA = arma::inv( arma::diagmat( arma::vec( scaP ) ) );
     }
 
-  //! @brief Set list of model parameter scenaros and parameter scaling (matrix format)
-  void set_parameters
+  //! @brief Set list of model parameter scenarios and parameter scaling (matrix format)
+  void set_parameter
     ( std::vector<FFVar> const& P, std::list<std::vector<double>> const& l_valP,
       arma::mat const& scaP )
     {
-      set_parameters( P, l_valP );
+      BASE_MBFA::set_parameter( P, l_valP );
       _mPARSCA = scaP;
     }
 
   //! @brief Set list of model parameter scenaros and parameter scaling (vector format)
-  void set_parameters
+  void set_parameter
     ( std::vector<FFVar> const& P, std::list<std::vector<double>> const& l_valP,
       std::vector<double> const& scaP=std::vector<double>() )
     {
-      assert( !P.empty() && !l_valP.empty() );
-      _np   = P.size();
-      _vPAR = P;
-      _vPARVAL.clear();
-      for( auto const& valP : l_valP ){
-        assert( valP.size() == _np );
-        _vPARVAL.push_back( valP );
-      }
-      _vPARWEI.assign( _vPARVAL.size(), 1/(double)l_valP.size() ); // equal frequencies
+      BASE_MBFA::set_parameter( P, l_valP );
 
       assert( scaP.empty() || scaP.size() == _np );
       _mPARSCA.reset();
       if( !scaP.empty() )
         _mPARSCA = arma::diagmat( arma::vec( scaP ) );
-        //_mPARSCA = arma::inv( arma::diagmat( arma::vec( scaP ) ) );
     }
 
   //! @brief Set list of model parameters and parameter scaling
-  void set_parameters
+  void set_parameter
     ( std::vector<FFVar> const& P, std::list<std::pair<std::vector<double>,double>> const& l_valP,
       arma::mat const& scaP )
     {
-      set_parameters( P, l_valP );
+      BASE_MBFA::set_parameter( P, l_valP );
       _mPARSCA = scaP;
     }
 
   //! @brief Set list of model parameters
-  void set_parameters
+  void set_parameter
     ( std::vector<FFVar> const& P, std::list<std::pair<std::vector<double>,double>> const& l_valP,
       std::vector<double> const& scaP=std::vector<double>() )
     {
-      assert( !P.empty() && !l_valP.empty() );
-      _np   = P.size();
-      _vPAR = P;
-
-      _vPARWEI.clear();
-      double prTot = 0.;
-      for( auto const& [valP,prP] : l_valP ){
-        assert( prP > 0 );
-        prTot += prP;
-      }
-
-      _vPARVAL.clear();
-      for( auto const& [valP,prP] : l_valP ){
-        assert( valP.size() == _np );
-        _vPARVAL.push_back( valP );
-        _vPARWEI.push_back( prP/prTot );
-      }
+      BASE_MBFA::set_parameter( P, l_valP );
 
       assert( scaP.empty() || scaP.size() == _np );
       _mPARSCA.reset();
       if( !scaP.empty() )
         _mPARSCA = arma::diagmat( arma::vec( scaP ) );
-        //_mPARSCA = arma::inv( arma::diagmat( arma::vec( scaP ) ) );
     }
 
   //! @brief Retreive parameter scaling
@@ -301,18 +226,7 @@ public:
       return _mPARSCA;
     }
 
-  //! @brief Set experimental controls
-  void set_controls
-    ( std::vector<FFVar> const& C, std::vector<double> const& CLB, std::vector<double> const& CUB )
-    {
-      assert( !C.empty() && CLB.size() == C.size() && CUB.size() == C.size() );
-      _nc     = C.size();
-      _vCON   = C;
-      _vCONLB = CLB;
-      _vCONUB = CUB;
-    }
-
-  //! @brief Set prior experimental campaign
+  //! @brief Append prior experimental campaign
   void add_prior_campaign
     ( std::list<std::pair<double,std::vector<double>>> const& C )
     {
@@ -355,10 +269,6 @@ public:
       return C;
     }
 
-  //! @brief Set uniform sample within bounds
-  static std::list<std::vector<double>> uniform_sample
-    ( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB );
-
   //! @brief Round fractional experimental efforts to nearest integer
   static void effort_rounding
     ( unsigned const n, unsigned const* typ, double* val );
@@ -373,29 +283,6 @@ private:
   BASE_MBDOE( BASE_MBDOE const& ) = delete;
   BASE_MBDOE& operator=( BASE_MBDOE const& ) = delete;
 };
-
-inline std::list<std::vector<double>>
-BASE_MBDOE::uniform_sample
-( size_t NSAM, std::vector<double> const& LB, std::vector<double> const& UB )
-{
-  assert( NSAM && LB.size() && LB.size() == UB.size() );
-  size_t NDIM = LB.size();
-
-  typedef boost::random::sobol_engine< boost::uint_least64_t, 64u > sobol64;
-  typedef boost::variate_generator< sobol64, boost::uniform_01< double > > qrgen;
-  sobol64 eng( NDIM );
-  qrgen gen( eng, boost::uniform_01<double>() );
-  gen.engine().seed( 0 );
-
-  std::list<std::vector<double>> LSAM;
-  for( size_t s=0; s<NSAM; ++s ){
-    LSAM.push_back( std::vector<double>( NDIM ) );
-    for( size_t k=0; k<NDIM; k++ )
-      LSAM.back()[k] = LB[k] + ( UB[k] - LB[k] ) * gen();
-  }
-
-  return LSAM;
-}
 
 inline void
 BASE_MBDOE::effort_apportion

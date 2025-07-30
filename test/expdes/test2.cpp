@@ -56,11 +56,14 @@ int main()
   IC[0] = 7e0;
   IC[1] = 1e-1;
 
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
-  for( unsigned i=0; i<NS; i++ ){
-    FCT[i][NY*i]   = y1;
-    FCT[i][NY*i+1] = y2;
-  }
+  std::vector<std::map<size_t,mc::FFVar>> FCT(NS+1);  // State functions
+  for( unsigned s=0; s<NS; s++ ) FCT[1+s] = { { NY*s, y1 }, { NY*s+1, y2 } };
+
+  //std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*(NS+1), 0. ) );  // State functions
+  //for( unsigned i=0; i<NS; i++ ){
+  //  FCT[i+1][NY*i]   = y1;
+  //  FCT[i+1][NY*i+1] = y2;
+  //}
 
   mc::ODESLVS_CVODES IVP;
   IVP.options.INTMETH   = mc::BASE_CVODES::Options::MSBDF;//MSADAMS;//
@@ -123,7 +126,7 @@ int main()
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK  = 0;
   DOE.options.MINLPSLV.NLPSLV.DISPLEVEL  = 0;
   DOE.options.MINLPSLV.NLPSLV.OPTIMTOL   = 1e-5;
-  DOE.options.MINLPSLV.MIPSLV.DISPLEVEL  = 1;
+  DOE.options.MINLPSLV.MIPSLV.DISPLEVEL  = 0;
   DOE.options.MINLPSLV.MIPSLV.INTFEASTOL = 1e-9;
   DOE.options.NLPSLV.DISPLEVEL   = 1;
   DOE.options.NLPSLV.GRADCHECK   = 0;
@@ -133,14 +136,14 @@ int main()
   DOE.options.NLPSLV.OPTIMTOL    = 1e-6;
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_controls( U, ULB, UUB );
-  DOE.set_parameters( P, PNOM );
+  DOE.set_control( U, ULB, UUB );
+  DOE.set_parameter( P, PNOM );
   DOE.setup();
-  DOE.sample_supports( 128 );
+  DOE.sample_support( 128 );
   DOE.combined_solve( 4 );
 //  DOE.effort_solve( 4 );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( 4, DOE.efforts() );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( 4, DOE.effort() );
 //  DOE.file_export( "test2" );
   auto campaign = DOE.campaign();
 

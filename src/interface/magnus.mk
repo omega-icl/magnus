@@ -5,7 +5,7 @@ include $(srcpath)/makeoptions.mk
 
 #####
 
-libobjs   = parest.o main.o
+libobjs   = nsfeas.o parest.o magnus.o
 libname   = magnus.so
 libdep    = pymc.so cronos.so canon.so
 

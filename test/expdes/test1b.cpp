@@ -59,11 +59,14 @@ int main()
   IC[1] = 0e0;
   IC[2] = 1e0; // [L]
 
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
-  for( unsigned i=0; i<NS; i++ ){
-    FCT[i][NY*i]   = CA;
-    FCT[i][NY*i+1] = CB;
-  }
+  std::vector<std::map<size_t,mc::FFVar>> FCT(NS+1);  // State functions
+  for( unsigned s=0; s<NS; s++ ) FCT[1+s] = { { NY*s, CA }, { NY*s+1, CB } };
+
+  //std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*(NS+1), 0. ) );  // State functions
+  //for( unsigned i=0; i<NS; i++ ){
+  //  FCT[i+1][NY*i]   = CA;
+  //  FCT[i+1][NY*i+1] = CB;
+  //}
 
   mc::ODESLVS_CVODES IVP;
   IVP.options.INTMETH   = mc::BASE_CVODES::Options::MSBDF;//MSADAMS;//
@@ -154,21 +157,21 @@ int main()
   DOE.options.NLPSLV.GRADMETH = DOE.options.NLPSLV.FSYM;//FAD;
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_controls( C, CLB, CUB );
+  DOE.set_control( C, CLB, CUB );
 
   std::list<std::vector<double>>&& KSAM = DOE.uniform_sample( NKSAM, KLB, KUB );
   for( auto& KSAMi : KSAM ) // Correction for reaction order alpha to follow a Bernouilli distribution: 1=75%, 2=25%
     if( KSAMi[1] <= 1.75 ) KSAMi[1] = KLB[1];
     else                   KSAMi[1] = KUB[1];
-  DOE.set_parameters( K, KSAM );
+  DOE.set_parameter( K, KSAM );
 
   // Solve MBDOE
   DOE.setup();
-  DOE.sample_supports( NCSAM );
+  DOE.sample_support( NCSAM );
   DOE.combined_solve( NEXP );
   //DOE.effort_solve( NEXP );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( NEXP, DOE.efforts() );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( NEXP, DOE.effort() );
   //DOE.file_export( "test1" );
   auto campaign = DOE.campaign();
 

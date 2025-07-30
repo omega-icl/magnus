@@ -173,7 +173,7 @@ pyPAREST
  )
  .def_static(
    "sobol_sample",
-   static_cast<std::list<std::vector<double>> (*)(size_t, std::vector<double> const&, std::vector<double> const&)>(&PAREST::sobol_sample)
+   static_cast<std::list<std::vector<double>> (*)(size_t, std::vector<double> const&, std::vector<double> const&)>(&PAREST::uniform_sample)
  )
  .def_property_readonly(
    "mle",

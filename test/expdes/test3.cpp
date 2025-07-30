@@ -58,11 +58,14 @@ int main()
   IC[1] = 1e-1;
 
   const size_t NY = 2;  // Number of outputs
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
-  for( size_t i=0; i<NS; i++ ){
-    FCT[i][NY*i]   = y1;
-    FCT[i][NY*i+1] = y2;
-  }
+  std::vector<std::map<size_t,mc::FFVar>> FCT(NS+1);  // State functions
+  for( unsigned s=0; s<NS; s++ ) FCT[1+s] = { { NY*s, y1 }, { NY*s+1, y2 } };
+
+  //std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*(NS+1), 0. ) );  // State functions
+  //for( unsigned i=0; i<NS; i++ ){
+  //  FCT[i+1][NY*i]   = y1;
+  //  FCT[i+1][NY*i+1] = y2;
+  //}
 
   mc::ODESLVS_CVODES IVP;
   IVP.options.INTMETH   = mc::BASE_CVODES::Options::MSBDF;//MSADAMS;//
@@ -161,8 +164,8 @@ int main()
   DOE.options.NLPSLV.FCTPREC     = 1e-7;
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
-  DOE.set_controls( C, CLB, CUB );
+  DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
+  DOE.set_control( C, CLB, CUB );
 
   std::list<std::pair<double,std::vector<double>>> prior_campaign
   {
@@ -176,17 +179,17 @@ int main()
 
   // Solve MBDOE
   DOE.setup();
-  DOE.sample_supports( NCSAM );
+  DOE.sample_support( NCSAM );
   //DOE.options.MAXITER = 1;
   //DOE.combined_solve( NEXP, false ); // continuous design
-  //auto CNTEFF = DOE.efforts();
+  //auto CNTEFF = DOE.effort();
   DOE.options.MAXITER = 4;
   //DOE.combined_solve( NEXP, true, CNTEFF ); // exact design
   DOE.combined_solve( NEXP );
   //DOE.effort_solve( NEXP );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( NEXP );//, DOE.efforts() );
-  //DOE.gradient_solve( DOE.efforts(), false );//true );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( NEXP );//, DOE.effort() );
+  //DOE.gradient_solve( DOE.effort(), false );//true );
   //DOE.file_export( "test2" );
   auto campaign = DOE.campaign();
 
@@ -257,7 +260,7 @@ int main()
   };
 */
 
-  DOE.set_parameters( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
+  DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) ); // dP );
   DOE.options.CRITERION = mc::EXPDES::BRISK;
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;
   DOE.setup();

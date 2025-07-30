@@ -291,7 +291,8 @@ fig.tight_layout()
 OpIVP = cronos.FFODE()
 IVP.options.DISPLEVEL = 0 # turn off display during numerical simulation
 IVP.options.RESRECORD = 0 # turn off trajectory record
-IVP.options.ATOL, IVP.options.ATOLS, IVP.options.RTOL, IVP.options.RTOLS = 1e-10, 1e-10, 1e-9, 1e-9
+IVP.options.ATOL, IVP.options.ATOLS, IVP.options.ATOLB, IVP.options.RTOL, IVP.options.RTOLS, IVP.options.RTOLB = 1e-10, 1e-10, 1e-10, 1e-10, 1e-10, 1e-10
+OpIVP.options.NP2NF = 100;
 
 # Experiment 1
 I0_Exp1 = pymc.FFVar(IVPDAG, "I0_Exp1") # incident light intensity [µmol/m2/s]
@@ -319,12 +320,12 @@ IVPDAG.output( Y_Exp2 )
 PE = ParEst()
 
 PE.options.DISPLEVEL = 1
-PE.options.NLPSLV.DISPLEVEL   = 0;
+PE.options.NLPSLV.DISPLEVEL   = 1;
 PE.options.NLPSLV.GRADCHECK   = 0;
-PE.options.NLPSLV.MAXTHREAD   = 0;
+PE.options.NLPSLV.MAXTHREAD   = 1;
 PE.options.NLPSLV.GRADMETH    = PE.options.NLPSLV.FSYM
 PE.options.NLPSLV.FCTPREC     = 1e-6;
-PE.options.NLPSLV.GRADLSEARCH = False;
+PE.options.NLPSLV.GRADLSEARCH = True;
 
 PE.set_dag( IVPDAG )
 PE.add_model( Y_Exp1, [I0_Exp1, X0_Exp1, N0_Exp1, q0_Exp1, f0_Exp1] )
@@ -395,7 +396,9 @@ PE.set_data( Data );
 PE.setup()
 PE.mle_solve( [0.36, 0.0, 2.69, 19.6, 0.8, 91.2, 100, 6.69, 7.53, 0.001, 0.0, 196.4, -0.456, 9.90, 0.136] )
 #PE.mle_solve( [0.443, 0.0, 2.850, 19.91, 1.64, 111.8, 250, 6.58, 7.35, 0.0002, 0.0, 260.0, -0.459, 11.05, 0.146] )
-#PE.mle_solve( 16 )
+
+
+PE.mle_solve( 16 )
 #print( PE.mle )
 
 

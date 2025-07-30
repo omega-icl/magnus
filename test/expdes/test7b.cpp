@@ -1,11 +1,12 @@
 #undef MC__NLPSLV_SNOPT_DEBUG
 #undef MAGNUS__EXPDES_SHOW_APPORTION
-#define MC__FFDOECRIT_CHECK
-#define MC__FFGRADDOECRIT_CHECK
-#define MC__FFDOEEFF_CHECK
-#define MC__FFGRADDOEEFF_CHECK
-#define MC__FFBREFF_CHECK
-#define MC__FFGRADBREFF_CHECK
+#undef MAGNUS__EXPDES_EVAL_DEBUG
+#define MC__FFODISTEFF_CHECK
+#define MC__FFGRADODISTEFF_CHECK
+#define MC__FFODISTCRIT_CHECK
+#define MC__FFGRADODISTCRIT_CHECK
+#undef MC__FFODISTCRIT_DEBUG
+
 
 #include "expdes.hpp"
 
@@ -142,13 +143,18 @@ int main()
   IVP.set_function( FCT );
   IVP.setup();
 
+  std::vector<double> dU{ 9.03125e-01, 8.25156e-01, 5.98344e-02, 1.10938e+00, 5.46875e-01, 3.13438e+01 };
+//  std::vector<double> dU{ 8.18750e-01, 8.32812e-01, 4.86313e-02, 9.68750e-01, 1.53125e+00, 2.44375e+01 };
+//  std::vector<double> dU{ 9.94087e-01, 8.32946e-01, 5.43341e-02, 1.20523e+00, 1.19121e+00, 2.85314e+01 };
+//  std::vector<double> dU{ 9.96875e-01, 8.22969e-01, 1.05406e-02, 1.01562e+00, 1.01562e+00, 2.40312e+01 };
+
   // #2 	0.800 	0.800 	0.036 	1.743 	1.826 	22.0 	0.0018 	0.020 	67.9
-  std::vector<double> dU{ 0.8, 0.8, 0.036, 1.743, 1.826, 22.0 };
+//  std::vector<double> dU{ 0.8, 0.8, 0.036, 1.743, 1.826, 22.0 };
   // #1 	0.800 	0.800 	0.025 	0.729 	2.000 	22.0 	0.0020 	0.020 	67.9
   //std::vector<double> dU{ 0.8, 0.8, 0.025, 0.729, 2.0, 22.0 };
   std::vector<double> dP{ 2800, 12, 2995, 4427, -80, 0, 1.7, 0.8 };
   //IVP.solve_state( dU, dP );
-  
+
   //std::ofstream direcSTA;
   //direcSTA.open( "test7_STA.dat", std::ios_base::out );
   //IVP.record( direcSTA );
@@ -160,26 +166,40 @@ int main()
   for( unsigned int j=0; j<NY; j++ ) Y[j] = OpODE( j, NU, U.data(), NP, P.data(), &IVP );//, mc::FFODE::SHALLOW );
   //std::cout << DAG;
 
+  // Model constraints
+  const unsigned NG = 3;
+  std::vector<mc::FFVar> G(NG);
+  G[0] = Y[0] - 2e-2;//1;
+  G[1] = Y[1] - 2e-3;//2;
+  G[2] = Y[2] - 85;
+//  const unsigned NG = 1;
+//  std::vector<mc::FFVar> G(NG);
+//  G[0] = Y[2] - 85;
+
   /////////////////////////////////////////////////////////////////////////
   // Simulate model
 
   // Nominal control and model parameters
-  std::vector<double> dY( NY*NS );
+  std::vector<double> dY( NY );
   DAG.eval( Y, dY, U, dU, P, dP );
-  for( unsigned i=0, k=0; i<NS; i++ )
-    for( unsigned j=0; j<NY; j++, k++ )
-      std::cout << "Y[" << i << "][" << j << "] = " << dY[k] << std::endl;
+  for( unsigned j=0; j<NY; j++ )
+    std::cout << "Y[" << j << "] = " << dY[j] << std::endl;
+
+  std::vector<double> dG( NG );
+  DAG.eval( G, dG, U, dU, P, dP );
+  for( unsigned j=0; j<NG; j++ )
+    std::cout << "G[" << j << "] = " << dG[j] << std::endl;
 
   //return 0;
 
   /////////////////////////////////////////////////////////////////////////
   // Define MBDOE
 
-  size_t const NEXP = 4;
+  size_t const NEXP = 8;
 
   mc::EXPDES DOE;
   DOE.options.CRITERION = mc::EXPDES::ODIST;
-  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//NEUTRAL;//
+  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 0;
@@ -190,22 +210,35 @@ int main()
   DOE.options.MINLPSLV.MIPSLV.INTFEASTOL = 1e-9;
   DOE.options.MINLPSLV.MIPSLV.OUTPUTFILE = "";//"test0b.lp";
   DOE.options.MINLPSLV.NLPSLV.GRADMETH  = DOE.options.MINLPSLV.NLPSLV.FSYM;
-  DOE.options.NLPSLV.DISPLEVEL = 1;
-  DOE.options.NLPSLV.GRADCHECK = 0;
+  DOE.options.NLPSLV.DISPLEVEL   = 1;
+  DOE.options.NLPSLV.GRADCHECK   = 0;
+  DOE.options.NLPSLV.GRADLSEARCH = 1;
+  DOE.options.NLPSLV.FCTPREC     = 1e-7;
   DOE.options.NLPSLV.GRADMETH = DOE.options.NLPSLV.FSYM;//FAD;
 
   DOE.set_dag( DAG );
   DOE.set_model( Y ); // YVAR
-  DOE.set_parameter( P, dP );
   
   // Experimental control space
   std::vector<double> ULB( { 0.8, 0.8, 0.0083, 0.5, 0.5, 22 } );
   std::vector<double> UUB( { 1.1, 0.835, 0.08, 2, 2, 35 } );
   DOE.set_control( U, ULB, UUB );
 
+  // Parametric uncertainty
+  size_t const NPSAM = 64;//128;
+  std::vector<double> PLB( NP ), PUB( NP );
+  for( size_t i=0; i<NP; ++i ){
+    //PLB[i] = PUB[i] = dP[i];
+    PLB[i] = dP[i]*0.95e0;  PUB[i] = dP[i]*1.05e0;
+  }
+  DOE.set_parameter( P, dP );
+  //DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) );
+
+//  DOE.set_constraint( G );
+//  DOE.options.FEASPROP = 128;
 //  DOE.setup();
 //  DOE.sample_support( 8192 );
-//  //DOE.file_export( "test7_8192" );
+//  DOE.file_export( "test7b_8192" );
 //  //return 0;
 
 //  // identify min/max output range for rescaling
@@ -226,23 +259,26 @@ int main()
 //              << "  " << std::scientific << std::setprecision(4) << std::setw(10) << YVAR[k]
 //              << std::endl;
 //  }
-  std::vector<double> YVAR{ 2.7342e-02, 5.9986e-04, 1.5588e+03};
+//  return 0;
+  std::vector<double> YVAR{ 1e-5, 1e-07, 1e2 };
+  //std::vector<double> YVAR{ 2.7342e-02, 5.9986e-04, 1.5588e+03};
   
   DOE.set_model( Y, YVAR ); // to give output variables about the same weight
+  DOE.set_constraint( G );
   DOE.setup();
 
-  size_t NSAM = 32;
-  DOE.sample_support( NSAM );
+  size_t NUSAM = 128;
+  DOE.sample_support( NUSAM );
   //DOE.combined_solve( NEXP );
   DOE.effort_solve( NEXP );//, false );
   DOE.gradient_solve( DOE.effort(), true );
   //DOE.effort_solve( 5, DOE.effort() );
-  DOE.file_export( "test7_N="+std::to_string(NEXP)+"_"+std::to_string(NSAM) );
+  DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
   DOE.stats.display();
   
   auto campaign = DOE.campaign();
   DOE.options.CRITERION = mc::EXPDES::ODIST;
-  DOE.setup();
+  //DOE.setup();
   DOE.evaluate_design( campaign, "ODIST" );
  
   return 0;

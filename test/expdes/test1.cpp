@@ -58,11 +58,14 @@ int main()
   IC[1] = 0e0;
   IC[2] = 1e0; // [L]
 
-  std::vector<std::vector<mc::FFVar>> FCT( NS, std::vector<mc::FFVar>( NY*NS, 0. ) );  // State functions
-  for( unsigned i=0; i<NS; i++ ){
-    FCT[i][NY*i]   = CA;
-    FCT[i][NY*i+1] = CB;
-  }
+  std::vector<std::map<size_t,mc::FFVar>> FCT(NS+1);  // State functions
+  for( unsigned s=0; s<NS; s++ ) FCT[1+s] = { { NY*s, CA }, { NY*s+1, CB } };
+
+  //std::vector<std::vector<mc::FFVar>> FCT( NS+1, std::vector<mc::FFVar>( NY*(NS+1), 0. ) );  // State functions
+  //for( unsigned i=0; i<NS; i++ ){
+  //  FCT[i+1][NY*i]   = CA;
+  //  FCT[i+1][NY*i+1] = CB;
+  //}
 
   mc::ODESLVS_CVODES IVP;
   IVP.options.INTMETH   = mc::BASE_CVODES::Options::MSBDF;//MSADAMS;//
@@ -89,23 +92,29 @@ int main()
   IVP.set_function( FCT );
   IVP.setup();
 
+//  IVP.solve_state( { 0.1, 0.0, 0.0, 0.0, 0.0, 323.15 }, { 0.5, 1.0, -3.1, 2.4 } );
+
   mc::FFODE OpODE;
   std::vector<mc::FFVar> Y(NY*NS);
-  for( unsigned int j=0; j<NY*NS; j++ ) Y[j] = OpODE( j, NC, C.data(), NK, K.data(), &IVP );//, mc::FFODE::SHALLOW );
+  for( unsigned int j=0; j<NY*NS; j++ ) Y[j] = OpODE( j, NC, C.data(), NK, K.data(), &IVP );
+
+//  mc::FFODE OpODE;
+//  std::vector<mc::FFVar> Y(NY*(NS+1));
+//  for( unsigned int j=0; j<NY*NS; j++ ) Y[j] = OpODE( j, NC, C.data(), NK, K.data(), &IVP );//, mc::FFODE::SHALLOW );
   //std::cout << DAG;
-/*
+
   /////////////////////////////////////////////////////////////////////////
   // Simulate model
 
-  // Nominal control and model parameters
-  std::vector<double> dC{ 0.1, 0.0, 0.0, 0.0, 0.0, 323.15 };
-  std::vector<double> dK{ 0.5, 1.0, -3.1, 2.4 };
-  std::vector<double> dY( NY*NS );
-  DAG.eval( NY*NS, Y.data(), dY.data(), NC, C.data(), dC.data(), NK, K.data(), dK.data() );
-  for( unsigned i=0, k=0; i<NS; i++ )
-    for( unsigned j=0; j<NY; j++, k++ )
-      std::cout << "Y[" << i << "][" << j << "] = " << dY[k] << std::endl;
-*/
+//  // Nominal control and model parameters
+//  std::vector<double> dC{ 0.1, 0.0, 0.0, 0.0, 0.0, 323.15 };
+//  std::vector<double> dK{ 0.5, 1.0, -3.1, 2.4 };
+//  std::vector<double> dY( NY*NS );
+//  DAG.eval( NY*NS, Y.data(), dY.data(), NC, C.data(), dC.data(), NK, K.data(), dK.data() );
+//  for( unsigned i=0, k=0; i<NS; i++ )
+//    for( unsigned j=0; j<NY; j++, k++ )
+//      std::cout << "Y[" << i << "][" << j << "] = " << dY[k] << std::endl;
+//  return 0;
   /////////////////////////////////////////////////////////////////////////
   // Perform EXPDES
 
@@ -159,22 +168,22 @@ int main()
   DOE.options.NLPSLV.FCTPREC     = 1e-7;
   DOE.set_dag( DAG );
   DOE.set_model( Y, YVAR );
-  DOE.set_controls( C, CLB, CUB );
+  DOE.set_control( C, CLB, CUB );
 
   std::list<std::vector<double>>&& KSAM = DOE.uniform_sample( NKSAM, KLB, KUB );
   for( auto& KSAMi : KSAM ) // Correction for reaction order alpha to follow a Bernouilli distribution: 1=75%, 2=25%
     if( KSAMi[1] <= 1.75 ) KSAMi[1] = KLB[1];
     else                   KSAMi[1] = KUB[1];
-  DOE.set_parameters( K, KSAM );
-//  DOE.set_parameters( K, dK );
+  DOE.set_parameter( K, KSAM );
+//  DOE.set_parameter( K, dK );
 
   // Solve EXPDES
   DOE.setup();
-  DOE.sample_supports( NCSAM );
+  DOE.sample_support( NCSAM );
   DOE.combined_solve( NEXP );
   //DOE.effort_solve( NEXP );
-  //DOE.gradient_solve( DOE.efforts(), true );
-  //DOE.effort_solve( NEXP, DOE.efforts() );
+  //DOE.gradient_solve( DOE.effort(), true );
+  //DOE.effort_solve( NEXP, DOE.effort() );
   //DOE.file_export( "test1" );
   DOE.stats.display();
   auto campaign = DOE.campaign();

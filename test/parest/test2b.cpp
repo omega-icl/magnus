@@ -204,7 +204,7 @@ int main()
 
   std::vector<mc::FFVar> Y2(NY*NS2);
   for( unsigned int j=0; j<NY*NS2; j++ ) Y2[j] = OpODE( j, NP, P.data(), NC, C2.data(), &IVP );
-  //std::cout << DAG;
+  std::cout << DAG;
 
   /////////////////////////////////////////////////////////////////////////
   // Perform MLE calculation again

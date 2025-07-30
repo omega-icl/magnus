@@ -1540,7 +1540,7 @@ public:
     ( FFOp const* op )
     const
     {
-#ifdef MC__FFGradODISTEFF_TRACE
+#ifdef MC__FFGRADODISTEFF_TRACE
       std::cout << "FFGradODISTEff::lt\n";
 #endif
       return( _ndxSUPP < dynamic_cast<FFGradODISTEff const*>(op)->_ndxSUPP );
@@ -2660,6 +2660,8 @@ protected:
   std::vector<FFVar> const* _FCON;
   // outputs
   std::vector<FFVar> const* _FOUT;
+  // constraints
+  std::vector<FFVar> const* _FCTR;
   // efforts
   std::map<size_t,double> const* _EFF;
   // parameter scenarios
@@ -2670,12 +2672,17 @@ protected:
   // Prior experimental output vectors
   std::vector<std::vector<arma::vec>> const* _OUTAP;
 
+  // all functions: outputs + constraints
+  std::vector<FFVar> _FFCT;
+
   // Number of parameters
   size_t _np;
   // Number of controls
   size_t _nc;
   // Number of outputs
   size_t _ny;
+  // Number of constraints
+  size_t _ng;
   // Number of scenarios
   size_t _ns;
   // Number of experiments
@@ -2689,9 +2696,9 @@ public:
   // Default constructor
   FFBaseODISTCrit
     ()
-    : _DAG( nullptr ), _FPAR( nullptr ), _FCON( nullptr ), _FOUT( nullptr ),
+    : _DAG( nullptr ), _FPAR( nullptr ), _FCON( nullptr ), _FOUT( nullptr ), _FCTR( nullptr ),
       _EFF( nullptr ), _DPAR( nullptr ), _EFFAP( nullptr ), _OUTAP( nullptr ),
-      _np( 0 ), _nc( 0 ), _ny( 0 ), _ns( 0 ), _ne( 0 ), _tolOD( 0e0 )
+      _np( 0 ), _nc( 0 ), _ny( 0 ), _ng( 0 ), _ns( 0 ), _ne( 0 ), _tolOD( 0e0 )
     {}
   
   // Copy constructor
@@ -2701,13 +2708,16 @@ public:
       _FPAR( Op._FPAR ),
       _FCON( Op._FCON ),
       _FOUT( Op._FOUT ),
+      _FCTR( Op._FCTR ),
       _EFF( Op._EFF ),
       _DPAR( Op._DPAR ),
       _EFFAP( Op._EFFAP ),
       _OUTAP( Op._OUTAP ),
+      _FFCT( Op._FFCT ),
       _np( Op._np ),
       _nc( Op._nc ),
       _ny( Op._ny ),
+      _ng( Op._ng ),
       _ns( Op._ns ),
       _ne( Op._ne ),
       _tolOD( Op._tolOD )
@@ -2715,8 +2725,8 @@ public:
 
   // Set internal fields
   void set
-    ( FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+    ( FFGraph* dag, std::vector<FFVar> const* par, std::vector<FFVar> const* con,
+      std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
@@ -2728,14 +2738,19 @@ public:
       _FPAR = par;
       _FCON = con;
       _FOUT = out;
+      _FCTR = ctr;
       _EFF  = eff;
       _DPAR = vpar;
       _OUTAP = outap;
       _EFFAP = effap;
 
+      _FFCT = *_FOUT;
+      if( _FCTR ) _FFCT.insert( _FFCT.end(), _FCTR->cbegin(), _FCTR->cend() );
+
       _np = _FPAR->size();
       _nc = _FCON->size();
       _ny = _FOUT->size();
+      _ng = (_FCTR? _FCTR->size(): 0);
       _ns = _DPAR->size();
       _ne = _EFF->size();
       
@@ -2752,18 +2767,22 @@ private:
   // control values
   mutable std::vector<double> _DCON;
   // output values
-  mutable std::vector<std::vector<std::vector<double>>> _DOUT; // _nc x _ns x _ny
+  mutable std::vector<std::vector<std::vector<double>>> _DFCT; // _ne x _ns x (_ny+_ng)
 
   // Subgraph
-  mutable FFSubgraph _sgOUT;
+  mutable FFSubgraph _sgFCT;
   // Work storage
   mutable std::vector<double> _wkD;
   // Thread storage
   mutable std::vector<FFGraph::Worker<double>> _wkThd;
 
-  // Evaluation of output distance from output values
+  // Evaluation of output distance criteria
   void _ODval
     ( double& OD, size_t const e1 )
+    const;
+  // Evaluation of constraint scenarios
+  void _CTRval
+    ( double* pCTRe, size_t const e )
     const;
 
 public:
@@ -2784,27 +2803,27 @@ public:
   // Define operation
   FFVar& operator()
     ( size_t const idep, FFVar const* coneff, FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+      std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
     {
+      FFBaseODISTCrit::set( dag, par, con, out, ctr, eff, vpar, outap, effap, tol );
 #ifdef MC__FFODISTCrit_CHECK
-      assert( idep < _ne );
+      assert( idep < _ne*(1+_ng*_ns) );
 #endif
-      FFBaseODISTCrit::set( dag, par, con, out, eff, vpar, outap, effap, tol );
-      return *(insert_external_operation( *this, _ne, _nc*_ne, coneff )[idep]);
+      return *(insert_external_operation( *this, _ne*(1+_ng*_ns), _nc*_ne, coneff )[idep]);
     }
 
   FFVar** operator()
     ( FFVar const* coneff, FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+      std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
     {
-      FFBaseODISTCrit::set( dag, par, con, out, eff, vpar, outap, effap, tol );
-      return insert_external_operation( *this, _ne, _nc*_ne, coneff );
+      FFBaseODISTCrit::set( dag, par, con, out, ctr, eff, vpar, outap, effap, tol );
+      return insert_external_operation( *this, _ne*(1+_ng*_ns), _nc*_ne, coneff );
     }
 
   // Evaluation overloads
@@ -2825,8 +2844,8 @@ public:
         return eval( nRes, static_cast<fadbad::F<double>*>(vRes), nVar, static_cast<fadbad::F<double> const*>(vVar), mVar );
 //      else if( idU == typeid( SLiftVar ) )
 //        return eval( nRes, static_cast<SLiftVar*>(vRes), nVar, static_cast<SLiftVar const*>(vVar), mVar );
-//      else if( idU == typeid( FFExpr ) )
-//        return eval( nRes, static_cast<FFExpr*>(vRes), nVar, static_cast<FFExpr const*>(vVar), mVar );
+      else if( idU == typeid( FFExpr ) )
+        return eval( nRes, static_cast<FFExpr*>(vRes), nVar, static_cast<FFExpr const*>(vVar), mVar );
 
       throw std::runtime_error( "FFODISTCrit::feval ** No evaluation method for type"+std::string(idU.name())+"\n" );
     }
@@ -2837,6 +2856,10 @@ public:
 
   void eval
     ( unsigned const nRes, FFDep* vRes, unsigned const nVar, FFDep const* vVar, unsigned const* mVar )
+    const;
+
+  void eval
+    ( unsigned const nRes, FFExpr* vRes, unsigned const nVar, FFExpr const* vVar, unsigned const* mVar )
     const;
 
   void eval
@@ -2886,18 +2909,22 @@ private:
   // control values
   mutable std::vector<std::vector<fadbad::F<double>>> _FDCON;
   // output values
-  mutable std::vector<std::vector<std::vector<fadbad::F<double>>>> _FDOUT;
+  mutable std::vector<std::vector<std::vector<fadbad::F<double>>>> _FDFCT;
 
   // Subgraph
-  mutable FFSubgraph _sgOUT;
+  mutable FFSubgraph _sgFCT;
   // Work storage
   mutable std::vector<fadbad::F<double>> _wkFD;
   // Thread storage
   mutable std::vector<FFGraph::Worker<fadbad::F<double>>> _wkThd;
 
-  // Evaluation output criterion derivatives from output values
+  // Derivatives of output distance criteria
   void _ODder
     ( double* pgradOD, size_t const e1 )
+    const;
+  // Derivatives of constraint scenarios
+  void _CTRder
+    ( double* pgradCTRe, size_t const e )
     const;
 
 public:
@@ -2905,7 +2932,7 @@ public:
   // Set internal fields
   void set
     ( FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+      std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
@@ -2913,7 +2940,7 @@ public:
 #ifdef MC__FFODISTCrit_CHECK
       assert( dag && par->size() && con->size() && fim->size() && eff->size() && vpar->size() );
 #endif
-      FFBaseODISTCrit::set( dag, par, con, out, eff, vpar, outap, effap, tol );
+      FFBaseODISTCrit::set( dag, par, con, out, ctr, eff, vpar, outap, effap, tol );
 
       _FDPAR.resize( _ns );
       for( size_t s=0; s<_ns; ++s )
@@ -2949,27 +2976,27 @@ public:
   // Define operation
   FFVar& operator()
     ( size_t const idep, FFVar const* coneff, FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+      std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
     {
+      set( dag, par, con, out, ctr, eff, vpar, outap, effap, tol );
 #ifdef MC__FFODISTCrit_CHECK
-      assert( idep < _ne*_nc*_ne );
+      assert( idep < _ne*_nc*_ne*(1+_ng*_ns) );
 #endif
-      set( dag, par, con, out, eff, vpar, outap, effap, tol );
-      return *(insert_external_operation( *this, _ne*_nc*_ne, _nc*_ne, coneff )[idep]);
+      return *(insert_external_operation( *this, _ne*_nc*_ne*(1+_ng*_ns), _nc*_ne, coneff )[idep]);
     }
 
   FFVar** operator()
     ( FFVar const* coneff, FFGraph* dag, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* con, std::vector<FFVar> const* out,
+      std::vector<FFVar> const* con, std::vector<FFVar> const* out, std::vector<FFVar> const* ctr,
       std::map<size_t,double> const* eff, std::vector<std::vector<double>> const* vpar,
       std::vector<std::vector<arma::vec>> const* outap, std::vector<double> const* effap,
       double const& tol )
     {
-      set( dag, par, con, out, eff, vpar, outap, effap, tol );
-      return insert_external_operation( *this, _ne*_nc*_ne, _nc*_ne, coneff );
+      set( dag, par, con, out, ctr, eff, vpar, outap, effap, tol );
+      return insert_external_operation( *this, _ne*_nc*_ne*(1+_ng*_ns), _nc*_ne, coneff );
     }
 
   // Evaluation overloads
@@ -2990,8 +3017,8 @@ public:
 //        return eval( nRes, static_cast<fadbad::F<double>*>(vRes), nVar, static_cast<fadbad::F<double> const*>(vVar), mVar );
 //      else if( idU == typeid( SLiftVar ) )
 //        return eval( nRes, static_cast<SLiftVar*>(vRes), nVar, static_cast<SLiftVar const*>(vVar), mVar );
-//      else if( idU == typeid( FFExpr ) )
-//        return eval( nRes, static_cast<FFExpr*>(vRes), nVar, static_cast<FFExpr const*>(vVar), mVar );
+      else if( idU == typeid( FFExpr ) )
+        return eval( nRes, static_cast<FFExpr*>(vRes), nVar, static_cast<FFExpr const*>(vVar), mVar );
 
       throw std::runtime_error( "FFGradODISTCrit::feval ** No evaluation method for type"+std::string(idU.name())+"\n" );
     }
@@ -3002,6 +3029,10 @@ public:
 
   void eval
     ( unsigned const nRes, FFDep* vRes, unsigned const nVar, FFDep const* vVar, unsigned const* mVar )
+    const;
+
+  void eval
+    ( unsigned const nRes, FFExpr* vRes, unsigned const nVar, FFExpr const* vVar, unsigned const* mVar )
     const;
 
   void eval
@@ -3057,12 +3088,35 @@ const
 }
 
 inline void
+FFODISTCrit::eval
+( unsigned const nRes, FFExpr* vRes, unsigned const nVar, FFExpr const* vVar,
+  unsigned const* mVar )
+const
+{
+#ifdef MC__FFODISTCRIT_TRACE
+  std::cout << "FFODISTCrit::eval: FFExpr\n"; 
+#endif
+
+  switch( FFExpr::options.LANG ){
+   case FFExpr::Options::DAG:
+    for( unsigned j=0; j<nRes; ++j ){
+      std::ostringstream os; os << name() << "[" << j << "]";
+      vRes[j] = FFExpr::compose( os.str(), nVar, vVar );
+    }
+    break;
+   case FFExpr::Options::GAMS:
+   default:
+    throw typename FFExpr::Exceptions( FFExpr::Exceptions::UNDEF );
+  }
+}
+
+inline void
 FFGradODISTCrit::eval
 ( unsigned const nRes, FFVar* vRes, unsigned const nVar, FFVar const* vVar,
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFODISTCRIT_TRACE
+#ifdef MC__FFGRADODISTCRIT_TRACE
   std::cout << "FFGradODISTCrit::eval: FFVar\n"; 
 #endif
 
@@ -3076,7 +3130,7 @@ FFGradODISTCrit::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFODISTCRIT_TRACE
+#ifdef MC__FFGRADODISTCRIT_TRACE
   std::cout << "FFGradODISTCrit::eval: FFDep\n"; 
 #endif
 
@@ -3084,6 +3138,50 @@ const
   for( size_t i=0; i<nVar; ++i ) vRes[0] += vVar[i];
   vRes[0].update( FFDep::TYPE::N );
   for( size_t j=1; j<nRes; ++j ) vRes[j] = vRes[0];
+}
+
+inline void
+FFGradODISTCrit::eval
+( unsigned const nRes, FFExpr* vRes, unsigned const nVar, FFExpr const* vVar,
+  unsigned const* mVar )
+const
+{
+#ifdef MC__FFGRADODISTCRIT_TRACE
+  std::cout << "FFGradODISTCrit::eval: FFExpr\n"; 
+#endif
+
+  switch( FFExpr::options.LANG ){
+   case FFExpr::Options::DAG:
+    for( unsigned j=0; j<nRes; ++j ){
+      std::ostringstream os; os << name() << "[" << j << "]";
+      vRes[j] = FFExpr::compose( os.str(), nVar, vVar );
+    }
+    break;
+   case FFExpr::Options::GAMS:
+   default:
+    throw typename FFExpr::Exceptions( FFExpr::Exceptions::UNDEF );
+  }
+}
+
+inline void
+FFODISTCrit::_CTRval
+( double* pCTRe, size_t const e )
+const
+{
+#ifdef MC__FFODISTCRIT_TRACE
+  std::cout << "FFODISTCrit::_CTRval\n"; 
+#endif
+#ifdef MC__FFODISTCRIT_CHECK
+  assert( _DFCT.size() == _ne && _DFCT.front().size() == _ns && _DFCT.front().front().size() == _ny+_ng );
+#endif
+
+  arma::mat&& CTRe = arma::mat( pCTRe, _ng, _ns, false );
+  for( size_t s=0; s<_ns; ++s ){ // Loop over uncertainty scenarios
+    CTRe.unsafe_col(s) = arma::vec( _DFCT[e][s].data()+_ny, _ng, false );
+#ifdef MC__FFODISTCRIT_DEBUG
+    std::cout << "g[" << e << "][" << s << "] = " << CTRe.col(s).t();
+#endif
+  }
 }
 
 inline void
@@ -3095,7 +3193,7 @@ const
   std::cout << "FFODISTCrit::_ODval\n"; 
 #endif
 #ifdef MC__FFODISTCRIT_CHECK
-  assert( _DOUT.size() == _ne && _DOUT.front().size == _ns && _DOUT.front().front().size == _ny );
+  assert( _DFCT.size() == _ne && _DFCT.front().size() == _ns && _DFCT.front().front().size() == _ny+_ng );
 #endif
 
   OD = 0.;
@@ -3103,11 +3201,11 @@ const
     double OD12 = 0.;
 
     for( size_t s=0; s<_ns; ++s ){ // Average over uncertainty scenarios
-      arma::vec const& y1 = arma::vec( _DOUT[e1][s].data(), _ny, false );
+      arma::vec const& y1 = arma::vec( _DFCT[e1][s].data(), _ny, false );
       arma::vec const& y2 = _OUTAP->at(s).at(e2);
 #ifdef MC__FFODISTCRIT_DEBUG
-      std::cout << "y[" << e1 << "][" << s << "] = " << y1;
-      std::cout << "yAP[" << e2 << "][" << s << "] = " << y2;
+      std::cout << "y[" << e1 << "][" << s << "] = " << y1.t();
+      std::cout << "yAP[" << e2 << "][" << s << "] = " << y2.t();
 #endif
 
       arma::mat norm12(1,1,arma::fill::none);
@@ -3128,11 +3226,11 @@ const
     double OD12 = 0.;
 
     for( size_t s=0; s<_ns; ++s ){ // Average over uncertainty scenarios
-      arma::vec const& y1 = arma::vec( _DOUT[e1][s].data(), _ny, false );
-      arma::vec const& y2 = arma::vec( _DOUT[e2][s].data(), _ny, false );
+      arma::vec const& y1 = arma::vec( _DFCT[e1][s].data(), _ny, false );
+      arma::vec const& y2 = arma::vec( _DFCT[e2][s].data(), _ny, false );
 #ifdef MC__FFODISTCRIT_DEBUG
-      std::cout << "y[" << e1 << "][" << s << "] = " << y1;
-      std::cout << "y[" << e2 << "][" << s << "] = " << y2;
+      std::cout << "y[" << e1 << "][" << s << "] = " << y1.t();
+      std::cout << "y[" << e2 << "][" << s << "] = " << y2.t();
 #endif
 
       arma::mat norm12( 1, 1, arma::fill::none );
@@ -3152,6 +3250,28 @@ const
 }
 
 inline void
+FFGradODISTCrit::_CTRder
+( double* pgradCTRe, size_t const e )
+const
+{
+#ifdef MC__FFGRADODISTCRIT_TRACE
+  std::cout << "FFGRADODISTCrit::_CTRder\n"; 
+#endif
+#ifdef MC__FFGRADODISTCRIT_CHECK
+  assert( _FDFCT.size() == _ne && _FDFCT.front().size() == _ns && _FDFCT.front().front().size() == _ny+_ng );
+#endif
+
+  arma::mat&& gradCTRe = arma::mat( pgradCTRe, _ne*_nc, _ng*_ns, false );
+  for( size_t s=0; s<_ns; ++s ) // Loop over uncertainty scenarios
+    for( size_t g=0; g<_ng; ++g ) // Loop over constraints
+      gradCTRe.unsafe_col(s*_ng+g) = arma::vec( &_FDFCT[e][s][g].d(0), _ne*_nc, false );
+
+#ifdef MC__FFGRADODISTCRIT_DEBUG
+  std::cout << "g_c[" << e << "] =\n" << gradCTRe;
+#endif
+}
+
+inline void
 FFGradODISTCrit::_ODder
 ( double* pgradOD, size_t const e1 )
 const
@@ -3160,15 +3280,11 @@ const
   std::cout << "FFGradODISTCrit::_ODder\n"; 
 #endif
 
-#ifdef MC__FFODISTCRIT_TRACE
-  std::cout << "FFODISTCrit::_ODval\n"; 
-#endif
-#ifdef MC__FFODISTCRIT_CHECK
-  assert( _DOUT.size() == _ne && _DOUT.front().size == _ns && _DOUT.front().front().size == _ny );
+#ifdef MC__FFGRADODISTCRIT_CHECK
+  assert( _FDFCT.size() == _ne && _FDFCT.front().size() == _ns && _FDFCT.front().front().size() == _ny+_ng );
 #endif
 
   double OD = 0.;
-  //arma::vec& gradOD1 = arma::vec( pgradOD + e1*_nc, _nc, false );
   arma::vec&& gradOD = arma::vec( pgradOD, _ne*_nc, false );
   gradOD.zeros();
 
@@ -3186,10 +3302,10 @@ const
     for( size_t s=0; s<_ns; ++s ){ // Average over uncertainty scenarios
 
       for( size_t i=0; i<_ny; ++i ){
-        y1(i) = _FDOUT[e1][s][i].x();
-        grady1.unsafe_col(i) = arma::vec( &_FDOUT[e1][s][i].d(0), _ne*_nc, false );
+        y1(i) = _FDFCT[e1][s][i].x();
+        grady1.unsafe_col(i) = arma::vec( &_FDFCT[e1][s][i].d(0), _ne*_nc, false );
       }
-#ifdef MC__FFODISTCRIT_DEBUG
+#ifdef MC__FFGRADODISTCRIT_DEBUG
       std::cout << "y[" << e1 << "][" << s << "] = " << y1;
       std::cout << "yAP[" << e2 << "][" << s << "] = " << _OUTAP->at(s).at(e2);
 #endif
@@ -3228,12 +3344,12 @@ const
     for( size_t s=0; s<_ns; ++s ){ // Average over uncertainty scenarios
 
       for( size_t i=0; i<_ny; ++i ){
-        y1(i) = _FDOUT[e1][s][i].x();
-        y2(i) = _FDOUT[e2][s][i].x();
-        grady1.unsafe_col(i) = arma::vec( &_FDOUT[e1][s][i].d(0), _ne*_nc, false );
-        grady2.unsafe_col(i) = arma::vec( &_FDOUT[e2][s][i].d(0), _ne*_nc, false );
+        y1(i) = _FDFCT[e1][s][i].x();
+        y2(i) = _FDFCT[e2][s][i].x();
+        grady1.unsafe_col(i) = arma::vec( &_FDFCT[e1][s][i].d(0), _ne*_nc, false );
+        grady2.unsafe_col(i) = arma::vec( &_FDFCT[e2][s][i].d(0), _ne*_nc, false );
       }
-#ifdef MC__FFODISTCRIT_DEBUG
+#ifdef MC__FFGRADODISTCRIT_DEBUG
       std::cout << "y[" << e1 << "][" << s << "] = " << y1;
       std::cout << "y[" << e2 << "][" << s << "] = " << y2;
       std::cout << "grad y[" << e1 << "][" << s << "] = " << grady1.t();
@@ -3279,31 +3395,39 @@ const
   std::cout << "FFODISTCrit::eval: double\n"; 
 #endif
 #ifdef MC__FFODISTCRIT_CHECK
-  assert( nRes == _ne && nVar == _nc*_ne );
+  assert( nRes == _ne*(1+_ng*_ns) && nVar == _nc*_ne );
 #endif
 
   // Get outputs for each scenario and each experiment
-  _DOUT.assign( _ne, std::vector<std::vector<double>>( _ns, std::vector<double>( _ny, 0. ) ) );
+  _DFCT.assign( _ne, std::vector<std::vector<double>>( _ns, std::vector<double>( _ny+_ng, 0. ) ) );
 
   double const* pCON = vVar;
   for( size_t e=0; e<_ne; ++e ){
     _DCON.assign( pCON, pCON+_nc );
-#ifdef MC__FFBRCRIT_DEBUG
-    std::cout << "c[" << e << "] = " << arma::vec( _DCON.data(), _nc, false );
+#ifdef MC__FFODISTCRIT_DEBUG
+    std::cout << "c[" << e << "] = " << arma::rowvec( _DCON.data(), _nc, false );
 #endif
-    _DAG->veval( _sgOUT, _wkD, _wkThd, *_FOUT, _DOUT[e], *_FPAR, *_DPAR, *_FCON, _DCON );
-#ifdef MC__FFBRCRIT_DEBUG
-    for( size_t j=0; j<_ns; ++j )
-      std::cout << "y[" << e << "][" << j << "] = " << arma::vec( _DOUT[e][j].data(), _ny, false );
+    _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT[e], *_FPAR, *_DPAR, *_FCON, _DCON );
+#ifdef MC__FFODISTCRIT_DEBUG
+    for( size_t j=0; j<_ns; ++j ){
+      std::cout << "y[" << e << "][" << j << "] = " << arma::rowvec( _DFCT[e][j].data(), _ny, false );
+      if( _ng ) std::cout << "g[" << e << "][" << j << "] = " << arma::rowvec( _DFCT[e][j].data()+_ny, _ng, false );
+    }
 #endif
     pCON += _nc;
   }
 
-  // Calculate output distance criterion
+  // Append output distance criteria and constraint scenarios
   for( size_t e=0; e<_ne; ++e ){
     _ODval( vRes[e], e );
 #ifdef MC__FFODISTCRIT_DEBUG
     std::cout << name() << "[" << e << "] = " << vRes[e] << std::endl;
+#endif
+    if( !_ng ) continue;
+    _CTRval( vRes + _ne+e*_ng*_ns, e );
+#ifdef MC__FFODISTCRIT_DEBUG
+    std::cout << name() << "[" << _ne+e*_ng*_ns << ":" << _ne+(e+1)*_ng*_ns-1 << "] = "
+              << arma::rowvec( vRes + _ne+e*_ng*_ns, _ng*_ns, false ) << std::endl;
 #endif
   }
 #ifdef MC__FFODISTCRIT_DEBUG
@@ -3317,26 +3441,32 @@ FFGradODISTCrit::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFGRADFIMCRIT_TRACE
+#ifdef MC__FFGRADODISTCRIT_TRACE
   std::cout << "FFGradODISTCrit::eval: double\n"; 
 #endif
 #ifdef MC__FFGRADODISTCRIT_CHECK
-  assert( nRes == nVar*_ne && nVar == _nc*_ne );
+  assert( nRes == nVar*(_ne*(1+_ng*_ns)) && nVar == _nc*_ne );
 #endif
 
   // Get output derivatives for each scenario and each experiment
-  _FDOUT.assign( _ne, std::vector<std::vector<fadbad::F<double>>>( _ns, std::vector<fadbad::F<double>>( _ny, 0. ) ) );
+  _FDFCT.assign( _ne, std::vector<std::vector<fadbad::F<double>>>( _ns, std::vector<fadbad::F<double>>( _ny+_ng, 0. ) ) );
 
   double const* pCON = vVar;
   for( size_t e=0; e<_ne; ++e ){
     for( size_t c=0; c<_nc; ++c )
       _FDCON[e][c].x() = pCON[c]; // does not change differential variables
-    _DAG->veval( _sgOUT, _wkFD, _wkThd, *_FOUT, _FDOUT[e], *_FPAR, _FDPAR, *_FCON, _FDCON[e] );
+    _DAG->veval( _sgFCT, _wkFD, _wkThd, _FFCT, _FDFCT[e], *_FPAR, _FDPAR, *_FCON, _FDCON[e] );
 #ifdef MC__FFGRADODISTCRIT_DEBUG
     for( size_t k=0; k<_ny; ++k ){
-      std::cout << "_FDOUT[" << e << "][" << _ns-1 << "][" << k << "] =";
-      for( size_t i=0; i<_FDOUT[e].back()[k].size(); ++i )
-        std::cout << "  " << _FDOUT[e].back()[k].deriv(i);
+      std::cout << "y_c[" << e << "][" << _ns-1 << "][" << k << "] =";
+      for( size_t i=0; i<_FDFCT[e].back()[k].size(); ++i )
+        std::cout << "  " << _FDFCT[e].back()[k].deriv(i);
+      std::cout << std::endl;
+    }
+    for( size_t k=0; k<_ng; ++k ){
+      std::cout << "g_c[" << e << "][" << _ns-1 << "][" << k << "] =";
+      for( size_t i=0; i<_FDFCT[e].back()[_ny+k].size(); ++i )
+        std::cout << "  " << _FDFCT[e].back()[_ny+k].deriv(i);
       std::cout << std::endl;
     }
     { int dum; std::cout << "Press 1"; std::cin >> dum; }
@@ -3344,14 +3474,21 @@ const
     pCON += _nc;
   }
 
-  // Calculate output distance criterion derivatives
+  // Append output distance criteria derivatives
   for( size_t e=0; e<_ne; ++e ){
     _ODder( vRes + e*_ne*_nc, e );
 #ifdef MC__FFGRADODISTCRIT_DEBUG
-    std::cout << name() << "[" << e << "] = " << arma::vec( &vRes[e*_ne*_nc], _ne*_nc, false ).t() << std::endl;
+    std::cout << name() << name() << "[" << e*_ng*_ns << ":" << (e+1)*_ng*_ns-1 << "] = "
+              << arma::rowvec( vRes + e*_ne*_nc, _ne*_nc, false ) << std::endl;
+#endif
+    if( !_ng ) continue;
+    _CTRder( vRes + (_ne+e*_ng*_ns)*_ne*_nc, e );
+#ifdef MC__FFGRADODISTCRIT_DEBUG
+    std::cout << name() << "[" << (_ne+e*_ng*_ns)*_ne*_nc << ":" << (_ne+(e+1)*_ng*_ns)*_ne*_nc-1 << "] = "
+              << arma::rowvec( vRes + (_ne+e*_ng*_ns)*_ne*_nc, _ne*_nc*_ns, false ) << std::endl;
 #endif
   }
-#ifdef MC__FFODISTCRIT_DEBUG
+#ifdef MC__FFGRADODISTCRIT_DEBUG
   { int dum; std::cout << "Press 1"; std::cin >> dum; }
 #endif
 }
@@ -3366,7 +3503,7 @@ const
   std::cout << "FFODISTCrit::eval: fadbad::F<FFVar>\n"; 
 #endif
 #ifdef MC__FFODISTCRIT_CHECK
-  assert( nRes == _ne );
+  assert( nRes == _ne*(1+_ng*_ns) && nVar == _nc*_ne );
 #endif
 
   std::vector<FFVar> vVarVal( nVar );
@@ -3375,7 +3512,7 @@ const
   FFVar const*const* ppResVal = insert_external_operation( *this, nRes, nVar, vVarVal.data() );
 
   FFGradODISTCrit OpResDer;
-  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
+  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _FCTR, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
   FFVar const*const* ppResDer = insert_external_operation( OpResDer, nRes*nVar, nVar, vVarVal.data() );
   for( size_t k=0; k<nRes; ++k ){
     vRes[k] = *ppResVal[k];
@@ -3402,7 +3539,7 @@ const
   std::cout << "FFODISTCrit::eval: fadbad::F<double>\n"; 
 #endif
 #ifdef MC__FFODISTCRIT_CHECK
-  assert( nRes == _ne );
+  assert( nRes == _ne*(1+_ng*_ns) && nVar == _nc*_ne );
 #endif
 
   std::vector<double> vVarVal( nVar );
@@ -3417,7 +3554,7 @@ const
   }
   
   FFGradODISTCrit OpResDer;
-  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
+  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _FCTR, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
   std::vector<double> vResDer( nRes*nVar ); 
   OpResDer.eval( nRes*nVar, vResDer.data(), nVar, vVarVal.data(), nullptr );
   for( size_t k=0; k<nRes; ++k ){
@@ -3441,11 +3578,11 @@ const
   std::cout << "FFODISTCrit::deriv:\n"; 
 #endif
 #ifdef MC__FFODISTCRIT_CHECK
-  assert( nRes == _ne );
+  assert( nRes == _ne*(1+_ng*_ns) && nVar == _nc*_ne );
 #endif
 
   FFGradODISTCrit OpResDer;
-  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
+  OpResDer.set( _DAG, _FPAR, _FCON, _FOUT, _FCTR, _EFF, _DPAR, _OUTAP, _EFFAP, _tolOD );
   FFVar const*const* ppResDer = insert_external_operation( OpResDer, nRes*nVar, nVar, vVar );
   for( size_t k=0; k<nRes; ++k )
     for( size_t i=0; i<nVar; ++i )
@@ -3909,7 +4046,7 @@ const
   std::cout << "FFBRCrit::_BRval\n";
 #endif
 #ifdef MC__FFBRISKCRIT_CHECK
-  assert( _EFF && !_EFF->empty() && DOUT.size() == _ne && DOUT.front().size == _ns && DOUT.front().front().size == _ny );
+  assert( _EFF && !_EFF->empty() && DOUT.size() == _ne && DOUT.front().size() == _ns && DOUT.front().front().size() == _ny );
 #endif
 
   auto BRappend = [&]( size_t j, size_t k, double& BR ){
@@ -4024,7 +4161,7 @@ const
   std::cout << "FFBGradRISKCrit::_BRder\n";
 #endif
 #ifdef MC__FFBRISKCRIT_CHECK
-  assert( _EFF && !_EFF->empty() && FDOUT.size() == _ne && FDOUT.front().size == _ns && FDOUT.front().front().size == _ny );
+  assert( _EFF && !_EFF->empty() && FDOUT.size() == _ne && FDOUT.front().size() == _ns && FDOUT.front().front().size() == _ny );
 #endif
 
 #ifdef MC__FFBRCRIT_LOG
@@ -4726,7 +4863,7 @@ const
   std::cout << "FFBRCrit::_BRval\n";
 #endif
 #ifdef MC__FFBRMMCRIT_CHECK
-  assert( _EFF && !_EFF->empty() && DOUT.size() == _ne && DOUT.front().size == _ns && DOUT.front().front().size == _nm*_ny );
+  assert( _EFF && !_EFF->empty() && DOUT.size() == _ne && DOUT.front().size() == _ns && DOUT.front().front().size() == _nm*_ny );
 #endif
 
   auto BRappend = [&]( size_t j, size_t k, double& BR ){

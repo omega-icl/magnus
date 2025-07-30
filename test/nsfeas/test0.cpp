@@ -1,0 +1,71 @@
+//#undef MC__FFFEAS_DEBUG
+//#define MAGNUS__NSFEAS_SETUP_DEBUG
+//#define MAGNUS__NSFEAS_SAMPLE_DEBUG
+
+#include "nsfeas.hpp"
+
+// Illustrative exampe in Kusumo et al (2020, https://doi.org/10.1021/acs.iecr.9b05006)
+////////////////////////////////////////////////////////////////////////
+int main()
+////////////////////////////////////////////////////////////////////////
+{
+  /////////////////////////////////////////////////////////////////////////
+  // Define model
+
+  mc::FFGraph DAG;  // DAG describing the model
+
+  const unsigned NX = 2;       // Number of controls
+  std::vector<mc::FFVar> X(NX);  // Controls
+  for( unsigned int i=0; i<NX; i++ ) X[i].set( &DAG );
+
+  const unsigned NP = 1;       // Number of uncertain parameters
+  std::vector<mc::FFVar> P(NP);  // Parameters
+  for( unsigned int i=0; i<NP; i++ ) P[i].set( &DAG );
+
+  const unsigned NG = 2;       // Number of constraints
+  const double GL = 0.20, GU = 0.75;
+  std::vector<mc::FFVar> G(NG);  // Constraints
+  G[0] = ( P[0]*X[0]*X[0] + X[1] ) - GU;
+  G[1] = GL - ( P[0]*X[0]*X[0] + X[1] );
+
+  /////////////////////////////////////////////////////////////////////////
+  // Define sampler
+
+  // Sampled parameters - normally distributed
+  unsigned const NSAM = 100;
+  //arma::vec vecPSAM = arma::randn( NSAM, arma::distr_param( 0, 1 ) );
+  arma::vec vecPSAM = arma::randn( NSAM, arma::distr_param( 1., std::sqrt(0.3) ) );
+  std::list<std::vector<double>> PSAM;
+  for( unsigned i=0; i<NSAM; ++i ) PSAM.push_back( { vecPSAM[i] } );
+
+  // Experimental control space
+  std::vector<double> XLB( { -1e0, -1e0 } );
+  std::vector<double> XUB( {  1e0,  1e0 } );
+
+  mc::NSFEAS NS;
+  NS.options.FEASCRIT  = mc::NSFEAS::Options::VAR;//CVAR;
+  NS.options.FEASTHRES = 0.1;
+  NS.options.NUMLIVE   = 500;
+  NS.options.NUMPROP   = 16;
+  NS.options.MAXITER   = 0;
+
+  NS.set_dag( DAG );
+  NS.set_constraint( G );
+  NS.set_control( X, XLB, XUB );
+  NS.set_parameter( P, PSAM );
+
+  NS.setup();
+  NS.sample();
+
+  NS.stats.display();
+  
+  for( auto const& [lkh,pcon] : NS.live_points() ){
+    std::cout << std::scientific << std::setprecision(5)
+              << std::setw(15) << lkh;
+    for( unsigned i=0; i<NX; ++i )
+      std::cout << std::setw(15) << pcon[i];
+    std::cout << std::endl;
+  }
+  
+  return 0;
+}
