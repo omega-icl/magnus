@@ -39,11 +39,17 @@ protected:
   //! @brief Size of model parameter
   size_t _np;
 
-  //! @brief Size of experimental control
+  //! @brief Size of model constants
   size_t _nc;
+
+  //! @brief Size of experimental control
+  size_t _nu;
 
   //! @brief vector of model constraints
   std::vector<FFVar> _vCTR;
+
+  //! @brief vector of model constants
+  std::vector<FFVar> _vCST;
 
   //! @brief vector of model parameters
   std::vector<FFVar> _vPAR;
@@ -68,7 +74,7 @@ public:
   //! @brief Class constructor
   BASE_MBFA()
     : _dag(nullptr),
-      _ng(0), _np(0), _nc(0)
+      _ng(0), _np(0), _nc(0), _nu(0)
     {}
 
   //! @brief Class destructor
@@ -91,17 +97,37 @@ public:
     const
     { return _ng; }
 
-  //! @brief Get size of experimental controls
+  //! @brief Get size of model constants
   size_t nc
     ()
     const
     { return _nc; }
+
+  //! @brief Get size of experimental controls
+  size_t nu
+    ()
+    const
+    { return _nu; }
 
   //! @brief Get size of model parameters
   size_t np
     ()
     const
     { return _np; }
+
+  //! @brief Set model constants
+  void set_constant
+    ( std::vector<FFVar> const& C )
+    {
+      _nc   = C.size();
+      _vCST = C;
+    }
+    
+  //! @brief Get model constants
+  std::vector<FFVar> const& var_constant
+    ()
+    const
+    { return _vCST; }
 
   //! @brief Set model parameters and nominal values
   void set_parameter
@@ -164,7 +190,7 @@ public:
     ( std::vector<FFVar> const& C, std::vector<double> const& CLB, std::vector<double> const& CUB )
     {
       assert( !C.empty() && CLB.size() == C.size() && CUB.size() == C.size() );
-      _nc     = C.size();
+      _nu     = C.size();
       _vCON   = C;
       _vCONLB = CLB;
       _vCONUB = CUB;

@@ -145,10 +145,13 @@ public:
   struct Options
   {
     //! @brief Constructor
-    Options():
-      DISPLEVEL(1),
-      RNGSEED(-1),
-      NLPSLV()
+    Options()
+      : NLPSLV()
+      { reset(); }
+
+    //! @brief Reset to default options
+    void reset
+      ()
       {
 #ifdef MC__USE_SNOPT
         NLPSLV.DISPLEVEL            = 0;
@@ -168,6 +171,8 @@ public:
         NLPSLV.GRADCHECK            = 0;
         NLPSLV.MAXTHREAD            = 0;
 #endif
+        DISPLEVEL                   = 1;
+        RNGSEED                     = -1;
       }
     //! @brief Assignment operator
     Options& operator= ( Options const& options ){

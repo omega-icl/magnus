@@ -1,3 +1,4 @@
+#define MC__FFFEAS_CHECK
 //#undef MC__FFFEAS_DEBUG
 //#define MAGNUS__NSFEAS_SETUP_DEBUG
 //#define MAGNUS__NSFEAS_SAMPLE_DEBUG
@@ -15,18 +16,18 @@ int main()
   mc::FFGraph DAG;  // DAG describing the model
 
   const unsigned NX = 2;       // Number of controls
-  std::vector<mc::FFVar> X(NX);  // Controls
-  for( unsigned int i=0; i<NX; i++ ) X[i].set( &DAG );
+  std::vector<mc::FFVar> X = DAG.add_vars( NX, "d" );  // Controls
 
   const unsigned NP = 1;       // Number of uncertain parameters
-  std::vector<mc::FFVar> P(NP);  // Parameters
-  for( unsigned int i=0; i<NP; i++ ) P[i].set( &DAG );
+  std::vector<mc::FFVar> P = DAG.add_vars( NP, "p" );  // Parameters
+
+  const unsigned NC = 2;       // Number of constants
+  std::vector<mc::FFVar> C = DAG.add_vars( NC, "c" );  // Constants
 
   const unsigned NG = 2;       // Number of constraints
   const double GL = 0.20, GU = 0.75;
-  std::vector<mc::FFVar> G(NG);  // Constraints
-  G[0] = ( P[0]*X[0]*X[0] + X[1] ) - GU;
-  G[1] = GL - ( P[0]*X[0]*X[0] + X[1] );
+  std::vector<mc::FFVar> G{ C[0] - ( P[0]*X[0]*X[0] + X[1] ),
+                            ( P[0]*X[0]*X[0] + X[1] ) - C[1] };
 
   /////////////////////////////////////////////////////////////////////////
   // Define sampler
@@ -51,19 +52,21 @@ int main()
 
   NS.set_dag( DAG );
   NS.set_constraint( G );
+  NS.set_constant( C );
   NS.set_control( X, XLB, XUB );
-  NS.set_parameter( P, PSAM );
+  NS.set_parameter( P, PSAM );//std::vector<double>({ 1. }) );
 
   NS.setup();
-  NS.sample();
+  NS.sample( { GL, GU } );
 
   NS.stats.display();
   
   for( auto const& [lkh,pcon] : NS.live_points() ){
     std::cout << std::scientific << std::setprecision(5)
-              << std::setw(15) << lkh;
+              << std::setw(15) << lkh
+              << std::setw(15) << pcon.first;
     for( unsigned i=0; i<NX; ++i )
-      std::cout << std::setw(15) << pcon[i];
+      std::cout << std::setw(15) << pcon.second[i];
     std::cout << std::endl;
   }
   

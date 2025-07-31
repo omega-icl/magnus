@@ -70,7 +70,7 @@ int main()
     std::cout << std::scientific << std::setprecision(5)
               << std::setw(15) << lkh;
     for( unsigned i=0; i<NP; ++i )
-      std::cout << std::setw(15) << pcon[i];
+      std::cout << std::setw(15) << pcon.second[i];
     std::cout << std::endl;
   }
   

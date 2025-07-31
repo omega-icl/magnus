@@ -46,7 +46,9 @@ print( NS.live_points )
 
 # Custom model passed from python
 def model( x ):
-  return [ x[2]*x[0]**2 + x[1] ]
+  d = x[0:2]
+  p = x[2]
+  return [ p*d[0]**2 + d[1] ]
 
 OpY = pymc.FFCustom()
 OpY.set_D_eval( model )

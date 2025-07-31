@@ -50,6 +50,9 @@ protected:
   //! @brief DAG of model
   DAG*                                         _dag;
 
+  //! @brief local copy of model constants
+  std::vector<FFVar>                           _vCST;
+
   //! @brief local copy of model parameters
   std::vector<FFVar>                           _vPAR;
 
@@ -58,6 +61,9 @@ protected:
 
   //! @brief vector of sampled control candidates
   std::vector<std::vector<double>>             _vCONSAM;
+
+  //! @brief constant values
+  std::vector<double>                          _vCSTVAL;
 
   //! @brief local copy of model outputs
   std::vector<FFVar>                           _vCTR;
@@ -84,13 +90,13 @@ protected:
   arma::mat                                    _nestShape;
 
   //! @brief map of live points
-  std::multimap<double,double const*>          _liveCON;
+  std::multimap<double,std::pair<double,double const*>> _liveCON;
 
   //! @brief map of dead points
-  std::multimap<double,double const*>          _deadCON;
+  std::multimap<double,std::pair<double,double const*>> _deadCON;
 
   //! @brief map of discarded points
-  std::multimap<double,double const*>          _discardCON;
+  std::multimap<double,std::pair<double,double const*>> _discardCON;
 
 public:
   /** @defgroup NSFEAS Model-based Feasibility Analysis using Nested Sampling
@@ -145,6 +151,7 @@ public:
         MAXITER    = 0;
         MAXCPU     = 0;
         DISPLEVEL  = 1;
+        DISPITER   = NUMLIVE/10;
       }
 
     //! @brief Assignment operator
@@ -161,13 +168,13 @@ public:
         MAXITER    = options.MAXITER;
         MAXCPU     = options.MAXCPU;
         DISPLEVEL  = options.DISPLEVEL;
+        DISPITER   = options.DISPITER;
         return *this;
       }
 
       //! @brief Enumeration for feasibility criterion
       enum TYPE{
-        PR=0,   //!< Infeasibility probability
-        VAR,    //!< Value-at-risk, VaR
+        VAR=1,  //!< Value-at-risk, VaR
         CVAR    //!< Conditional value-at-risk, CVaR
       };
 
@@ -189,8 +196,10 @@ public:
     size_t                   MAXITER;
     //! @brief maximal walltime
     double                   MAXCPU;
-    //! @brief Verbosity level
+    //! @brief display level
     int                      DISPLEVEL;
+    //! @brief display frequency
+    size_t                   DISPITER;
   } options;
 
   //! @brief NSFEAS solver exceptions
@@ -201,6 +210,7 @@ public:
     enum TYPE{
       BADSIZE=0,	//!< Inconsistent dimensions
       NOSETUP,		//!< Problem was not setup
+      NOCONST,		//!< Missing constant values
       INTERN=-33	//!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
@@ -214,6 +224,8 @@ public:
           return "NSFEAS::Exceptions  Inconsistent dimensions";
         case NOSETUP:
           return "NSFEAS::Exceptions  Problem not setup";
+        case NOCONST:
+          return "NSFEAS::Exceptions  Missing constant values";
         case INTERN:
         default:
           return "NSFEAS::Exceptions  Internal error";
@@ -228,7 +240,7 @@ public:
     //! @brief Reset statistics
     void reset()
       { walltime = std::chrono::microseconds(0);
-        numlkh = numerr = numfeas = 0; }
+        iter = numlkh = numerr = numfeas = 0; }
     //! @brief Display statistics
     void display
       ( std::ostream&os=std::cout )
@@ -238,6 +250,8 @@ public:
                                << std::left  << std::setw(10) << numerr << std::endl
            << "#  WALL TIME: " << std::right << std::setw(10) << to_time( walltime ) << " SEC" << std::endl
            << std::endl; }
+    //! @brief Current iteration
+    size_t iter;
     //! @brief Total likelihood evaluations
     size_t numlkh;
     //! @brief Number of failed likelihood evaluations
@@ -266,26 +280,26 @@ public:
 
   //! @brief Sample feasible domain
   int sample
-    ( bool const reset=true, std::ostream& os=std::cout );
+    ( std::vector<double> const& vcst=std::vector<double>(), bool const reset=true, std::ostream& os=std::cout );
 /*
   //! @brief Export effort, support and fim to file
   bool file_export
     ( std::string const& name );
 */
   //! @brief Retrieve live points
-  std::multimap<double,double const*> const& live_points
+  std::multimap<double,std::pair<double,double const*>> const& live_points
     ()
     const
     { return _liveCON; }
 
   //! @brief Retrieve dead points
-  std::multimap<double,double const*> const& dead_points
+  std::multimap<double,std::pair<double,double const*>> const& dead_points
     ()
     const
     { return _deadCON; }
 
   //! @brief Retrieve discarded points
-  std::multimap<double,double const*> const& discard_points
+  std::multimap<double,std::pair<double,double const*>> const& discard_points
     ()
     const
     { return _discardCON; }
@@ -329,15 +343,17 @@ NSFEAS::setup
   stats.reset();
   _is_setup = false;
 
-  if( !_ng || !_nc )
+  if( !_ng || !_nu )
     throw Exceptions( Exceptions::BADSIZE );
 
   try{
     delete _dag; _dag = new DAG;
     _dag->options = BASE_MBFA::_dag->options;
 
-    _vCON.resize( _nc );
-    _dag->insert( BASE_MBFA::_dag, _nc, BASE_MBFA::_vCON.data(), _vCON.data() );
+    _vCON.resize( _nu );
+    _dag->insert( BASE_MBFA::_dag, _nu, BASE_MBFA::_vCON.data(), _vCON.data() );
+    _vCST.resize( _nc );
+    _dag->insert( BASE_MBFA::_dag, _nc, BASE_MBFA::_vCST.data(), _vCST.data() );
     _vPAR.resize( _np );
     _dag->insert( BASE_MBFA::_dag, _np, BASE_MBFA::_vPAR.data(), _vPAR.data() );
     _vCTR.resize( _ng );
@@ -349,22 +365,13 @@ NSFEAS::setup
     for( size_t i=0; i<_ng; ++i )
       std::cout << "CTR[" << i << "] = " << exCTR[i] << std::endl;
 #endif
-
-    FFFeas OpFeas( options.FEASTHRES );
-    FFVar** ppLKH = OpFeas( _dag, &_vCON, _vPAR.size()?&_vPAR:nullptr, &_vCTR,
-                            _vPARVAL.size()?&_vPARVAL:nullptr, _vPARWEI.size()?&_vPARWEI:nullptr );
-    _vLKH  = { *ppLKH[0], *ppLKH[1], *ppLKH[2] };
-    _sgLKH = _dag->subgraph( _vLKH );
-#ifdef MAGNUS__NSFEAS_SETUP_DEBUG
-    _dag->output( _sgLKH );
-#endif
   }
   catch(...){
     return false;
   }
   
   // Sobol sampler
-  sobol64 eng( _nc );
+  sobol64 eng( _nu );
   _gen.engine() = eng;
 
   _is_setup = true;
@@ -387,7 +394,7 @@ NSFEAS::_sample_ini
     // Evaluate new point
     try{
       _dag->eval( _sgLKH, _wkLKH, _vLKH, _dLKH, _vCON, dCON );
-      _liveCON.insert( { _dLKH[options.FEASCRIT], dCON.data() } );
+      _liveCON.insert( { _dLKH[options.FEASCRIT], { _dLKH[0], dCON.data() } } );
       if( _feasible( _dLKH[options.FEASCRIT], os ) ) ++stats.numfeas;
     }
     catch(...){
@@ -395,8 +402,8 @@ NSFEAS::_sample_ini
       continue;
     }
 
-    if( options.DISPLEVEL > 1  && _liveCON.size() && !(_liveCON.size()%20) )
-      os << "." << std::flush;
+    //if( options.DISPLEVEL > 1  && _liveCON.size() && !(_liveCON.size()%20) )
+    //  os << "." << std::flush;
 
     if( options.MAXCPU > 0 && stats.to_time( stats.lapse( tstart ) ) >= options.MAXCPU )
       return false;
@@ -409,8 +416,8 @@ void
 NSFEAS::_sample_bounds
 ( std::ostream& os )
 {
-  _vCONSAM.push_back( std::vector<double>( _nc ) );
-  for( size_t i=0; i<_nc; i++ )
+  _vCONSAM.push_back( std::vector<double>( _nu ) );
+  for( size_t i=0; i<_nu; i++ )
     _vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * _gen();
     //_vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * arma::randu();
 }
@@ -421,11 +428,11 @@ NSFEAS::_update_nest
 ( double const& f, std::ostream& os )
 {
   // Gather data points
-  _nestData.set_size( _nc, _liveCON.size() );
+  _nestData.set_size( _nu, _liveCON.size() );
   size_t c=0;
   for( auto const& [lkh,pcon] : _liveCON ){
     double* mem = _nestData.colptr( c++ );
-    for( size_t i=0; i<_nc; ++i ) mem[i] = pcon[i]; 
+    for( size_t i=0; i<_nu; ++i ) mem[i] = pcon.second[i]; 
   }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << "Live data points:\n" << _nestData.t();
@@ -438,10 +445,10 @@ NSFEAS::_update_nest
 #endif
 
   // Nest shape matrix
-  boost::math::chi_squared dist( _nc );
+  boost::math::chi_squared dist( _nu );
   double const Chi2Crit = boost::math::quantile( dist, options.ELLCONF );
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-  std::cout << "Critical chi-squared " << _nc << " DoF, 99%: " << Chi2Crit << std::endl;
+  std::cout << "Critical chi-squared " << _nu << " DoF, 99%: " << Chi2Crit << std::endl;
 #endif
   arma::mat covData = arma::cov( _nestData.t(), 1 );
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
@@ -455,15 +462,15 @@ bool
 NSFEAS::_sample_nest
 ( bool const bndcheck, std::ostream& os )
 {
-  // Generate point in _nc-dimensional unit hyperball
+  // Generate point in _nu-dimensional unit hyperball
   //thread_local static sobol64 eng( 1 );
   //thread_local static qrgen gen( eng, boost::uniform_01<double>() );
   //gen.engine().seed( 0 );
   //for( unsigned i=0; i<500; ++i ){
-    //arma::vec vRan = arma::normalise( arma::randn(_nc), 2 ) * std::pow( gen(), 1/(double)_nc );
-    arma::vec vSAM = arma::normalise( arma::randn(_nc), 2 ) * std::pow( arma::randu(), 1/(double)_nc );
+    //arma::vec vRan = arma::normalise( arma::randn(_nu), 2 ) * std::pow( gen(), 1/(double)_nu );
+    arma::vec vSAM = arma::normalise( arma::randn(_nu), 2 ) * std::pow( arma::randu(), 1/(double)_nu );
 //#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-//    std::cout << "Sampling of _nc-dimensional unit hyperball:\n";
+//    std::cout << "Sampling of _nu-dimensional unit hyperball:\n";
 //    std::cout << vSAM.t();
 //#endif
   //}
@@ -473,13 +480,13 @@ NSFEAS::_sample_nest
 //  std::cout << "Nest Shape:\n" << _nestShape;
 //#endif
   vSAM = _nestCentre + _nestShape * vSAM;
-  for( size_t i=0; i<_nc && bndcheck; ++i )
+  for( size_t i=0; i<_nu && bndcheck; ++i )
     if( vSAM[i] < _vCONLB[i] || vSAM[i] > _vCONUB[i] ) return false;
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << vSAM.t();
 #endif
 
-  _vCONSAM.push_back( std::vector<double>( vSAM.memptr(), vSAM.memptr()+_nc ) );
+  _vCONSAM.push_back( std::vector<double>( vSAM.memptr(), vSAM.memptr()+_nu ) );
   return true;
 }
 
@@ -490,7 +497,6 @@ NSFEAS::_feasible
 const
 {
   switch( options.FEASCRIT ){
-    case Options::PR:   if( crit <= 1-options.FEASTHRES ) return true;
     case Options::VAR:
     case Options::CVAR: if( crit <= 0 ) return true;
   }
@@ -505,7 +511,6 @@ NSFEAS::_terminate
 const
 {
   switch( options.FEASCRIT ){
-    case Options::PR:   if( _liveCON.rbegin()->first <= 1-options.FEASTHRES ) return 1; // completion
     case Options::VAR:
     case Options::CVAR: if( _liveCON.rbegin()->first <= 0 ) return 1; // completion
   }
@@ -519,12 +524,25 @@ const
 inline
 int
 NSFEAS::sample
-( bool const reset, std::ostream& os )
+( std::vector<double> const& vcst, bool const reset, std::ostream& os )
 {
 
-  if( !_is_setup )       throw Exceptions( Exceptions::NOSETUP );
-  if( !options.NUMLIVE ) throw Exceptions( Exceptions::BADSIZE );
+  if( !_is_setup )          throw Exceptions( Exceptions::NOSETUP );
+  if( !options.NUMLIVE )    throw Exceptions( Exceptions::BADSIZE );
+  if( _nc && vcst.empty() ) throw Exceptions( Exceptions::NOCONST );
   auto&& tstart = stats.start();
+
+
+  FFFeas OpFeas( options.FEASTHRES );
+  _vCSTVAL = vcst;
+  FFVar** ppLKH = OpFeas( _dag, &_vCON, _vPAR.size()?&_vPAR:nullptr, _vCST.size()?&_vCST:nullptr, &_vCTR,
+                          _vPARVAL.size()?&_vPARVAL:nullptr, _vPARWEI.size()?&_vPARWEI:nullptr,
+                          _vCSTVAL.size()?&_vCSTVAL:nullptr );
+  _vLKH  = { *ppLKH[0], *ppLKH[1], *ppLKH[2] };
+  _sgLKH = _dag->subgraph( _vLKH );
+#ifdef MAGNUS__NSFEAS_SETUP_DEBUG
+  _dag->output( _sgLKH );
+#endif
 
   FFFeas::Confidence = options.FEASTHRES;
   int flag = 1;
@@ -560,11 +578,37 @@ NSFEAS::sample
       if( _feasible( crit, os ) ) ++stats.numfeas;
     }
   }
+
+  double f = options.ELLMAG; //Z = 0., 
+  if( options.DISPLEVEL ){
+    std::cout << std::setw(7)  << "Iterate"
+              << std::setw(15) << "Contour"
+              << std::setw(6)  << "#Feas"
+              << std::setw(9)  << "#Dead"
+              << std::setw(15) << "Factor"
+              << std::endl
+              << std::setw(7+15+6+9+15) << std::setfill('-') << "-"
+              << std::setfill(' ') << std::endl;
+    std::cout << std::setw(7) << 0
+              << std::scientific << std::setprecision(4) << std::setw(15) << _liveCON.rbegin()->first
+              << std::setw(6) << stats.numfeas
+              << std::setw(9) << _deadCON.size()
+              << std::scientific << std::setprecision(4) << std::setw(15) << f
+              << std::endl;
+    }
  
   // Main iteration
-  flag = 0;
-  double f = options.ELLMAG; //Z = 0., 
-  for( size_t it=0; !flag; ++it ){
+  flag  = _terminate( 0, tstart, os );
+  for( stats.iter=0; !flag; ++stats.iter ){
+
+    if( stats.iter && options.DISPLEVEL && (!options.DISPITER || !(stats.iter % options.DISPITER)) ){
+      std::cout << std::setw(7) << stats.iter
+                << std::scientific << std::setprecision(4) << std::setw(15) << _liveCON.rbegin()->first
+                << std::setw(6) << stats.numfeas
+                << std::setw(9) << _deadCON.size()
+                << std::scientific << std::setprecision(4) << std::setw(15) << f
+                << std::endl;
+    }
 
     // Update ellipsoidal nest
     if( !_update_nest( f, os ) )
@@ -584,14 +628,14 @@ NSFEAS::sample
 
         // Check for improvement for insertion
         if( _dLKH[options.FEASCRIT] > _liveCON.rbegin()->first ){
-          _discardCON.insert( { _dLKH[options.FEASCRIT], dCON.data() } );
+          _discardCON.insert( { _dLKH[options.FEASCRIT], { _dLKH[0], dCON.data() } } );
           continue;
         }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
         std::cout << "Replace live point" << std::endl;
 #endif
         if( _feasible( _dLKH[options.FEASCRIT], os ) ) ++stats.numfeas;
-        _liveCON.insert( { _dLKH[options.FEASCRIT], dCON.data() } );
+        _liveCON.insert( { _dLKH[options.FEASCRIT], { _dLKH[0], dCON.data() } } );
       
         // Remove previous worse and add to dead points
         _deadCON.insert( *_liveCON.rbegin() );
@@ -607,15 +651,6 @@ NSFEAS::sample
       }
     }
 
-    if( options.DISPLEVEL ){
-      std::cout << std::setw(5) << it
-                << std::scientific << std::setprecision(4) << std::setw(15) << _liveCON.rbegin()->first
-                << std::setw(6) << stats.numfeas
-                << std::setw(9) << _deadCON.size()
-                << std::scientific << std::setprecision(4) << std::setw(15) << f
-                << std::endl;
-    }
-
     // Update ellipsoid magnification factor
     f = options.ELLMAG * std::pow( std::exp( -(_deadCON.size()-1e0)/options.NUMLIVE ), options.ELLRED );   
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
@@ -623,8 +658,18 @@ NSFEAS::sample
 #endif
 
     // Update termination flag
-    flag = _terminate( it, tstart, os );
+    flag = _terminate( stats.iter, tstart, os );
   }
+
+  if( options.DISPLEVEL ){
+    std::cout << std::setw(7) << stats.iter+1
+              << std::scientific << std::setprecision(4) << std::setw(15) << _liveCON.rbegin()->first
+              << std::setw(6) << stats.numfeas
+              << std::setw(9) << _deadCON.size()
+              << std::scientific << std::setprecision(4) << std::setw(15) << f
+              << std::endl;
+  }
+
 
   stats.walltime += stats.lapse( tstart );
   switch( flag ){

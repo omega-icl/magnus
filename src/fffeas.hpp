@@ -28,19 +28,26 @@ private:
   mutable FFGraph* _DAG;
   // parameters
   std::vector<FFVar> const* _FPAR;
+  // constants
+  std::vector<FFVar> const* _FCST;
   // controls
   std::vector<FFVar> const* _FCON;
   // constraints
   std::vector<FFVar> const* _FCTR;
+  
   // parameter scenarios
   std::vector<std::vector<double>> const* _DPAR;
   // parameter scenario weights
   std::vector<double> const* _WPAR;
+  // constant values: _nc
+  std::vector<double> const* _DCST;
 
   // Number of parameters
   size_t _np;
-  // Number of controls
+  // Number of constants
   size_t _nc;
+  // Number of controls
+  size_t _nu;
   // Number of constraints
   size_t _ng;
   // Number of scenarios
@@ -71,22 +78,34 @@ public:
   // Set variables, parameters and scenarios
   void set
     ( FFGraph* dag, std::vector<FFVar> const* con, std::vector<FFVar> const* par, 
-      std::vector<FFVar> const* ctr, std::vector<std::vector<double>> const* vpar,
-      std::vector<double> const* wpar )
+      std::vector<FFVar> const* cst, std::vector<FFVar> const* ctr,
+      std::vector<std::vector<double>> const* vpar, std::vector<double> const* wpar,
+      std::vector<double> const* vcst )
     {
-#ifdef MC__FFBRCRIT_CHECK
+#ifdef MAGNUS__FFFEAS_CHECK
       assert( dag && con->size() && ctr->size() );
 #endif
       _DAG  = dag;
       _FPAR = par;
+      _FCST = cst;
       _FCON = con;
       _FCTR = ctr;
-      _DPAR = vpar;
-      _WPAR = wpar;
 
       _np = _FPAR? _FPAR->size(): 0;
-      _nc = _FCON->size();
+      _nc = _FCST? _FCST->size(): 0;
+      _nu = _FCON->size();
       _ng = _FCTR->size();
+      
+#ifdef MAGNUS__FFFEAS_CHECK
+      assert( !vcst || vcst->size() == _nc );
+#endif
+      _DCST = vcst;
+
+#ifdef MAGNUS__FFFEAS_CHECK
+      assert( !vpar || vpar->at(0).size() == _nc );
+#endif
+      _DPAR = vpar;
+      _WPAR = wpar;
       _ns = _DPAR? _DPAR->size(): 1;
     }
 
@@ -102,12 +121,15 @@ public:
     : FFOp   ( Op ),
       _DAG   ( Op._DAG ),
       _FPAR  ( Op._FPAR ),
+      _FCST  ( Op._FCST ),
       _FCON  ( Op._FCON ),
       _FCTR  ( Op._FCTR ),
       _DPAR  ( Op._DPAR ),
       _WPAR  ( Op._WPAR ),
+      _DCST  ( Op._DCST ),
       _np    ( Op._np ),
       _nc    ( Op._nc ),
+      _nu    ( Op._nu ),
       _ng    ( Op._ng ),
       _ns    ( Op._ns )
     {}
@@ -117,23 +139,26 @@ public:
   // VaR and CVaR are in reference to confidence threshold in static public member mc::FFFeas::Confidence
   FFVar** operator()
     ( FFGraph* dag, std::vector<FFVar> const* con, std::vector<FFVar> const* par,
-      std::vector<FFVar> const* ctr, std::vector<std::vector<double>> const* vpar,
-      std::vector<double> const* wpar )
+      std::vector<FFVar> const* cst, std::vector<FFVar> const* ctr,
+      std::vector<std::vector<double>> const* vpar, std::vector<double> const* wpar,
+      std::vector<double> const* vcst )
+
     {
-      set( dag, con, par, ctr, vpar, wpar );
-      return insert_external_operation( *this, 3, _nc, con->data() );
+      set( dag, con, par, cst, ctr, vpar, wpar, vcst );
+      return insert_external_operation( *this, 3, _nu, con->data() );
     }
 
   FFVar& operator()
     ( unsigned const idep, FFGraph* dag, std::vector<FFVar> const* con, std::vector<FFVar> const* par,
-      std::vector<FFVar> const* ctr, std::vector<std::vector<double>> const* vpar,
-      std::vector<double> const* wpar )
+      std::vector<FFVar> const* cst, std::vector<FFVar> const* ctr,
+      std::vector<std::vector<double>> const* vpar, std::vector<double> const* wpar,
+      std::vector<double> const* vcst )
     {
 #ifdef MAGNUS__FFFEAS_CHECK
       assert( idep < 3 );
 #endif
-      set( dag, con, par, ctr, vpar, wpar );
-      return *(insert_external_operation( *this, 3, _nc, con->data() )[idep]);
+      set( dag, con, par, cst, ctr, vpar, wpar, vcst );
+      return *(insert_external_operation( *this, 3, _nu, con->data() )[idep]);
     }
 
   // Evaluation overloads
@@ -221,22 +246,31 @@ const
   std::cout << "FFFeas::eval: double\n"; 
 #endif
 #ifdef MC__FFFEAS_CHECK
-  assert( nRes == 3 && nVar == _nc );
+  assert( nRes == 3 && nVar == _nu );
 #endif
+  if( _nc && ( !_DCST || _DCST->size() < _nc ) ) 
+    throw std::runtime_error( "FFFeas::eval ** Constant values missing for constraint evaluation" );
+  if( _np && ( !_DPAR || !_WPAR || _DPAR->at(0).size() < _np || _WPAR->size() < _ns ) ) 
+    throw std::runtime_error( "FFFeas::eval ** Parameter values missing for constraint evaluation" );
 
   // Get constraints for each scenario and controls vVar 
   _DCTR.assign( _ns?_ns:1, std::vector<double>( _ng, 0. ) );
-  _DCON.assign( vVar, vVar+_nc );
+  _DCON.assign( vVar, vVar+_nu );
 #ifdef MC__FFFEAS_DEBUG
-  std::cout << "CON = " << arma::vec( _DCON.data(), _nc, false ).t();
+  std::cout << "CON = " << arma::vec( _DCON.data(), _nu, false ).t();
 #endif
-  if( !_np )
-    _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FCON, _DCON );  
-  else if( _ns == 1 )
-    _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FPAR, _DPAR->at(0), *_FCON, _DCON );
-  else
-    //_DAG->veval( _sgCTR, _wkD, *_FCTR, _DCTR, *_FPAR, *_DPAR, *_FCON, _DCON );
-    _DAG->veval( _sgCTR, _wkD, _wkThd, *_FCTR, _DCTR, *_FPAR, *_DPAR, *_FCON, _DCON );
+  if( !_np ){
+    if( !_nc ) _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FCON, _DCON );
+    else       _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FCON, _DCON, *_FCST, *_DCST );
+  }
+  else if( _ns == 1 ){
+    if( !_nc ) _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FPAR, _DPAR->at(0), *_FCON, _DCON );
+    else       _DAG->eval( _sgCTR, _wkD, *_FCTR, _DCTR[0], *_FPAR, _DPAR->at(0), *_FCON, _DCON, *_FCST, *_DCST );
+  }
+  else{
+    if( !_nc ) _DAG->veval( _sgCTR, _wkD, _wkThd, *_FCTR, _DCTR, *_FPAR, *_DPAR, *_FCON, _DCON );
+    else       _DAG->veval( _sgCTR, _wkD, _wkThd, *_FCTR, _DCTR, *_FPAR, *_DPAR, *_FCON, _DCON, *_FCST, *_DCST );
+  }
 #ifdef MC__FFFEAS_DEBUG
   for( size_t s=0; s<(_ns?_ns:1); ++s )
     std::cout << "CTR[" << s << "] = " << arma::vec( _DCTR[s].data(), _ng, false ).t();
@@ -275,10 +309,10 @@ const
   }
 
   // Feasibility probability
-  vRes[0] = 0.;
+  vRes[0] = 1.;
   for( auto const& [Res,Pr] : ResCTR ){
     if( Res >= 0. ) break;
-    vRes[0] += Pr;
+    vRes[0] -= Pr;
   }
 
   // Value-at-risk
