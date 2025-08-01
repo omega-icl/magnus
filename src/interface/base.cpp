@@ -73,12 +73,22 @@ pyMBFA
  )
  .def(
    "set_constant",
-   []( BASE_MBFA& self, std::vector<mc::FFVar> const& c ){ self.set_constant( c ); },
+   []( BASE_MBFA& self, std::vector<mc::FFVar> const& c, std::vector<double> const& cval )
+     { self.set_constant( c, cval ); },
+   py::arg("var"),
+   py::arg("val")=std::vector<double>(),
    "set model constants"
+ )
+ .def(
+   "reset_constant",
+   []( BASE_MBFA& self )
+     { self.reset_constant(); },
+   "reset model constants"
  )
  .def_property_readonly(
    "var_constant",
-   []( BASE_MBFA const& self ){ return self.var_constant(); },
+   []( BASE_MBFA const& self )
+     { return self.var_constant(); },
    py::return_value_policy::reference_internal,
    "model constants"
  )

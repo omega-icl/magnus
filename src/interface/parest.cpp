@@ -67,8 +67,17 @@ pyPAREST
  )
  .def(
    "set_constant",
-   []( PAREST& self, std::vector<mc::FFVar> const& c ){ self.set_constant( c ); },
+   []( PAREST& self, std::vector<mc::FFVar> const& c, std::vector<double> const& cval )
+     { self.set_constant( c, cval ); },
+   py::arg("var"),
+   py::arg("val")=std::vector<double>(),
    "set model constants"
+ )
+ .def(
+   "reset_constant",
+   []( PAREST& self )
+     { self.reset_constant(); },
+   "reset model constants"
  )
  .def_property_readonly(
    "var_constant",

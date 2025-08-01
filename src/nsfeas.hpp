@@ -62,9 +62,6 @@ protected:
   //! @brief vector of sampled control candidates
   std::vector<std::vector<double>>             _vCONSAM;
 
-  //! @brief constant values
-  std::vector<double>                          _vCSTVAL;
-
   //! @brief local copy of model outputs
   std::vector<FFVar>                           _vCTR;
 
@@ -210,7 +207,7 @@ public:
     enum TYPE{
       BADSIZE=0,	//!< Inconsistent dimensions
       NOSETUP,		//!< Problem was not setup
-      NOCONST,		//!< Missing constant values
+      BADCONST,		//!< Unspecified constants
       INTERN=-33	//!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
@@ -224,8 +221,8 @@ public:
           return "NSFEAS::Exceptions  Inconsistent dimensions";
         case NOSETUP:
           return "NSFEAS::Exceptions  Problem not setup";
-        case NOCONST:
-          return "NSFEAS::Exceptions  Missing constant values";
+        case BADCONST:
+          return "NSFEAS::Exceptions  Unspecified constants";
         case INTERN:
         default:
           return "NSFEAS::Exceptions  Internal error";
@@ -529,12 +526,14 @@ NSFEAS::sample
 
   if( !_is_setup )          throw Exceptions( Exceptions::NOSETUP );
   if( !options.NUMLIVE )    throw Exceptions( Exceptions::BADSIZE );
-  if( _nc && vcst.empty() ) throw Exceptions( Exceptions::NOCONST );
   auto&& tstart = stats.start();
 
+  // Update constants
+  if( vcst.size() && vcst.size() == _nc ) _vCSTVAL = vcst;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
 
+  // Set feasibility functions
   FFFeas OpFeas( options.FEASTHRES );
-  _vCSTVAL = vcst;
   FFVar** ppLKH = OpFeas( _dag, &_vCON, _vPAR.size()?&_vPAR:nullptr, _vCST.size()?&_vCST:nullptr, &_vCTR,
                           _vPARVAL.size()?&_vPARVAL:nullptr, _vPARWEI.size()?&_vPARWEI:nullptr,
                           _vCSTVAL.size()?&_vCSTVAL:nullptr );

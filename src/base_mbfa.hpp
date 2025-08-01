@@ -51,6 +51,9 @@ protected:
   //! @brief vector of model constants
   std::vector<FFVar> _vCST;
 
+  //! @brief vector of model constant values
+  std::vector<double> _vCSTVAL;
+
   //! @brief vector of model parameters
   std::vector<FFVar> _vPAR;
 
@@ -115,14 +118,25 @@ public:
     const
     { return _np; }
 
-  //! @brief Set model constants
+  //! @brief Set model constants and (optionally) values
   void set_constant
-    ( std::vector<FFVar> const& C )
+    ( std::vector<FFVar> const& C, std::vector<double> const& valC=std::vector<double>() )
     {
+      assert( valC.empty() || valC.size() == C.size() );
       _nc   = C.size();
       _vCST = C;
+      _vCSTVAL = valC;
     }
-    
+
+  //! @brief Reset model constants
+  void reset_constant
+    ()
+    {
+      _nc = 0;
+      _vCST.clear();
+      _vCSTVAL.clear();
+    }
+
   //! @brief Get model constants
   std::vector<FFVar> const& var_constant
     ()

@@ -198,8 +198,9 @@ public:
     enum TYPE{
       BADSIZE=0,    //!< Inconsistent dimensions
       BADOPTION,    //!< Incorrect option
-      NOMODEL,	    //!< unspecified model
-      NODATA,	    //!< unspecified data
+      BADCONST,     //!< Unspecified constants
+      NOMODEL,	    //!< Unspecified model
+      NODATA,	    //!< Unspecified data
       INTERN=-33    //!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
@@ -213,6 +214,8 @@ public:
           return "PAREST::Exceptions  Inconsistent dimensions";
         case BADOPTION:
           return "PAREST::Exceptions  Incorrect option";
+        case BADCONST:
+          return "PAREST::Exceptions  Unspecified constants";
         case NOMODEL:
           return "PAREST::Exceptions  Unspecified model";
         case NODATA:
@@ -404,6 +407,10 @@ PAREST::mle_solve
 
   auto&& t_slvmle = stats.start();
 
+  // Update constants
+  if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
   // Local NLP optimization
   NLP PE;
 
@@ -416,7 +423,7 @@ PAREST::mle_solve
   _MLECrit = 0.;
   for( size_t m=0; m<_nm; ++m ){
     if( !_ny[m] ) continue;
-    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_vCSTVAL, &_vDAT[m] );
   }
   FFLin<I> OpSum;
   if( _nr )
@@ -428,7 +435,7 @@ PAREST::mle_solve
     PE.add_ctr( std::get<1>(_vCTR).at(g), std::get<0>(_vCTR).at(g)-std::get<2>(_vCTR).at(g) );
 
   PE.setup();
-  int iflag = PE.solve( P0.data(), nullptr, nullptr, C0.data() );
+  int iflag = PE.solve( P0.data(), nullptr, nullptr, _vCSTVAL.data() );
 
   if( options.DISPLEVEL > 1 )
     os << "#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
@@ -453,6 +460,10 @@ PAREST::mle_solve
 {
   auto&& t_slvmle = stats.start();
 
+  // Update constants
+  if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
   // Local NLP optimization
   NLP PE;
 
@@ -465,7 +476,7 @@ PAREST::mle_solve
   _MLECrit = 0.;
   for( size_t m=0; m<_nm; ++m ){
     if( !_ny[m] ) continue;
-    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_vCSTVAL, &_vDAT[m] );
   }
   FFLin<I> OpSum;
   if( _nr )
@@ -477,7 +488,7 @@ PAREST::mle_solve
     PE.add_ctr( std::get<1>(_vCTR).at(g), std::get<0>(_vCTR).at(g)-std::get<2>(_vCTR).at(g) );
 
   PE.setup();
-  int iflag = PE.solve( nsam, _vPARLB.data(), _vPARUB.data(), C0.data(), nullptr, 1 );
+  int iflag = PE.solve( nsam, _vPARLB.data(), _vPARUB.data(), _vCSTVAL.data(), nullptr, 1 );
 
   if( options.DISPLEVEL > 1 )
     os << "#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
@@ -512,15 +523,19 @@ PAREST::chi2_test
   chi_squared dist( _nd-_np );
   double Chi2Crit = quantile( dist, conf );
 
+  // Update constants
+  if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
   // Compute MLE residual
   FFMLE OpMLE;
   _MLECrit = 0.;
   for( size_t m=0; m<_nm; ++m ){
     if( !_ny[m] ) continue;
-    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &C0, &_vDAT[m] );
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_vCSTVAL, &_vDAT[m] );
   }
   try{
-    _dag->eval( _wkOUT, 1, &_MLECrit, &Chi2Val, _np, _vPAR.data(), P0.data(), _nc, _vCST.data(), C0.data() );
+    _dag->eval( _wkOUT, 1, &_MLECrit, &Chi2Val, _np, _vPAR.data(), P0.data(), _nc, _vCST.data(), _vCSTVAL.data() );
     Chi2Val *= 2;
   }
   catch(...){

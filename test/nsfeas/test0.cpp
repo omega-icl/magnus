@@ -52,12 +52,12 @@ int main()
 
   NS.set_dag( DAG );
   NS.set_constraint( G );
-  NS.set_constant( C );
+  NS.set_constant( C, { GL, GU } );
   NS.set_control( X, XLB, XUB );
   NS.set_parameter( P, PSAM );//std::vector<double>({ 1. }) );
 
   NS.setup();
-  NS.sample( { GL, GU } );
+  NS.sample();// { GL, GU } );
 
   NS.stats.display();
   
