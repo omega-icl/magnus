@@ -1,11 +1,13 @@
 #define MAGNUS__EXPDES_SETUP_DEBUG
 #define MAGNUS__EXPDES_SHOW_APPORTION
-#define MC__FFDOECRIT_CHECK
-#define MC__FFGRADDOECRIT_CHECK
+#define MC__FFFIMCRIT_CHECK
+#define MC__FFGRADFIMCRIT_CHECK
 #define MC__FFDOEEFF_CHECK
 #define MC__FFGRADDOEEFF_CHECK
 #define MC__FFBREFF_CHECK
 #define MC__FFGRADBREFF_CHECK
+#define MC__FFBRCRIT_CHECK
+#define MC__FFGRADBRCRIT_CHECK
 
 #include "expdes.hpp"
 
@@ -26,9 +28,13 @@ int main()
   std::vector<mc::FFVar> P(NP);  // Parameters
   for( unsigned int i=0; i<NP; i++ ) P[i].set( &DAG );
 
+  const unsigned NC = 1;       // Number of constants
+  std::vector<mc::FFVar> C(NC);  // constants
+  for( unsigned int i=0; i<NC; i++ ) C[i].set( &DAG );
+
   const unsigned NY = 1;       // Number of measured outputs
   std::vector<mc::FFVar> Y(NY);  // Outputs
-  Y[0] = P[0] * exp( P[1] * X[0] );
+  Y[0] = P[0] * exp( P[1] * X[0] ) + C[0];
 
   /////////////////////////////////////////////////////////////////////////
   // Define MBDOE
@@ -48,8 +54,8 @@ int main()
   std::vector<double> YVAR( { 1e-1 } );
 
   mc::EXPDES DOE;
-  DOE.options.CRITERION = mc::EXPDES::DOPT;//DOPT;//BRISK;//
-  DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//NEUTRAL;//
+  DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;//
+  DOE.options.RISK      = mc::EXPDES::Options::AVERSE;//NEUTRAL;//
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 1;
@@ -63,6 +69,7 @@ int main()
   DOE.set_dag( DAG );
   DOE.set_model( Y );//, YVAR );
   DOE.set_control( X, XLB, XUB );
+  DOE.set_constant( C, { 1. } );
   DOE.set_parameter( P, DOE.uniform_sample( NSAM, PLB, PUB ), PSCA );
 
   std::list<std::pair<double,std::vector<double>>> prior_campaign

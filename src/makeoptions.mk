@@ -8,8 +8,8 @@ PATH_CANON     = $(shell cd $(HOME)/Programs/bitbucket/canon40; pwd)
 include $(PATH_CANON)/src/makeoptions.mk
 
 PROF = #-pg
-OPTIM = #-O2
-DEBUG = -g
+OPTIM = -O2
+DEBUG = #-g
 WARN  = -Wall -Wno-misleading-indentation -Wno-unknown-pragmas -Wno-parentheses -Wno-unused-result
 CPP17 = -std=c++17
 CC    = gcc-13

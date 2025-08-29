@@ -36,6 +36,9 @@ protected:
   //! @brief Size of model constraints
   size_t _ng;
 
+  //! @brief Size of model likelihood
+  size_t _nl;
+
   //! @brief Size of model parameter
   size_t _np;
 
@@ -47,6 +50,9 @@ protected:
 
   //! @brief vector of model constraints
   std::vector<FFVar> _vCTR;
+
+  //! @brief vector of model likelihood
+  std::vector<FFVar> _vLKH;
 
   //! @brief vector of model constants
   std::vector<FFVar> _vCST;
@@ -77,7 +83,7 @@ public:
   //! @brief Class constructor
   BASE_MBFA()
     : _dag(nullptr),
-      _ng(0), _np(0), _nc(0), _nu(0)
+      _ng(0), _nl(0), _np(0), _nc(0), _nu(0)
     {}
 
   //! @brief Class destructor
@@ -263,6 +269,28 @@ public:
     ()
     const
     { return _vCTR; }
+
+  //! @brief Set likelihood criterion
+  void set_loglikelihood
+    ( FFVar const& LL )
+    {
+      _nl = 1;
+      _vLKH = { LL };
+    }
+
+  //! @brief Reset likelihood criterion
+  void reset_loglikelihood
+    ()
+    {
+      _nl = 0;
+      _vLKH.clear();
+    }
+
+  //! @brief Get likelihood
+  std::vector<FFVar> const& var_loglikelihood
+    ()
+    const
+    { return _vLKH; }
 
 private:
 

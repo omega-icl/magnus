@@ -29,7 +29,7 @@ NS.set_parameter( [p], [1] );
 NS.setup()
 NS.sample()
 
-print( NS.live_points )
+#print( NS.live_points )
 
 # Probabilistic case
 import numpy as np
@@ -42,7 +42,7 @@ NS.set_parameter( [p], psam );
 NS.setup()
 NS.sample()
 
-print( NS.live_points )
+#print( NS.live_points )
 
 # Custom model passed from python
 def model( x ):
@@ -59,4 +59,4 @@ NS.set_constraint( [ y-0.75, 0.20-y ] )
 NS.setup()
 NS.sample()
 
-print( NS.live_points )
+#print( NS.live_points )

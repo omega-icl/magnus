@@ -5,6 +5,8 @@ namespace py = pybind11;
 void mc_base  ( py::module_ & );
 void mc_nsfeas( py::module_ & );
 void mc_parest( py::module_ & );
+void mc_expdes( py::module_ & );
+void mc_modiscr( py::module_ & );
 
 PYBIND11_MODULE( magnus, m )
 {
@@ -22,5 +24,7 @@ PYBIND11_MODULE( magnus, m )
   mc_base  ( m );
   mc_nsfeas( m );
   mc_parest( m );
+  mc_expdes( m );
+  mc_modiscr( m );
 }
 

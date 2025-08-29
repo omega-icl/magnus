@@ -9,9 +9,10 @@ namespace py = pybind11;
 
 void mc_nsfeas( py::module_ &m )
 {
+
 typedef mc::NSFEAS NSFEAS;
 
-py::class_<NSFEAS,mc::BASE_MBFA> pyNSFEAS( m, "NSFeas", py::multiple_inheritance() );
+py::class_<NSFEAS, mc::BASE_MBFA> pyNSFEAS( m, "NSFeas", py::multiple_inheritance() );
 
 pyNSFEAS
  .def(
@@ -43,22 +44,31 @@ pyNSFEAS
  .def_property_readonly(
    "live_points",
    []( NSFEAS const& self ){
-     arma::mat samples( 2+self.nu(), self.live_points().size() );
-     size_t c=0;
-     for( auto const& [lkh,pcon] : self.live_points() ){
-       double* mem = samples.colptr( c++ );
-       mem[0] = lkh;
-       mem[1] = pcon.first;
-       for( size_t i=0; i<self.nu(); ++i ) mem[2+i] = pcon.second[i]; 
+     arma::mat mpts( self.live_points().size(), self.nu() );
+     arma::vec vlkh( self.live_points().size() );
+     arma::vec vprb( self.live_points().size() );
+     arma::vec vaux( self.live_points().size() );
+     size_t r=0;
+     for( auto const& [lkh,val] : self.live_points() ){
+       for( size_t c=0; c<self.nu(); ++c )
+         mpts(r,c) = std::get<0>(val)[c];
+       vlkh(r) = lkh;
+       vprb(r) = std::get<1>(val);
+       vaux(r) = std::get<2>(val);
+       ++r;
      }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-     std::cout << "samples( " << samples.n_rows << "," << samples.n_cols << "):\n" << samples;
+     std::cout << "mpts( " << samples.n_rows << "," << samples.n_cols << "):\n" << mpts;
 #endif
      constexpr size_t elsize = sizeof(double);
-     size_t const ndim = 2;
-     size_t shape[ndim]{samples.n_rows, samples.n_cols};
-     size_t strides[ndim]{elsize, samples.n_rows * elsize};
-     return py::array_t<double>( shape, strides, samples.memptr() );
+     size_t mshape[2]{mpts.n_rows, mpts.n_cols};
+     size_t mstrides[2]{elsize, mpts.n_rows * elsize};
+     size_t vshape[2]{vlkh.n_elem, 1};
+     size_t vstrides[2]{elsize, vlkh.n_elem * elsize};
+     return std::make_tuple( py::array_t<double>( mshape, mstrides, mpts.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vlkh.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vprb.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vaux.memptr() ) );
    },
    py::return_value_policy::reference_internal,
    "retrieve live points"
@@ -66,22 +76,31 @@ pyNSFEAS
  .def_property_readonly(
    "dead_points",
    []( NSFEAS const& self ){
-     arma::mat samples( 2+self.nu(), self.dead_points().size() );
-     size_t c=0;
-     for( auto const& [lkh,pcon] : self.dead_points() ){
-       double* mem = samples.colptr( c++ );
-       mem[0] = lkh;
-       mem[1] = pcon.first;
-       for( size_t i=0; i<self.nu(); ++i ) mem[2+i] = pcon.second[i]; 
+     arma::mat mpts( self.dead_points().size(), self.nu() );
+     arma::vec vlkh( self.dead_points().size() );
+     arma::vec vprb( self.dead_points().size() );
+     arma::vec vaux( self.dead_points().size() );
+     size_t r=0;
+     for( auto const& [lkh,val] : self.dead_points() ){
+       for( size_t c=0; c<self.nu(); ++c )
+         mpts(r,c) = std::get<0>(val)[c];
+       vlkh(r) = lkh;
+       vprb(r) = std::get<1>(val);
+       vaux(r) = std::get<2>(val);
+       ++r;
      }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-     std::cout << "samples( " << samples.n_rows << "," << samples.n_cols << "):\n" << samples;
+     std::cout << "mpts( " << samples.n_rows << "," << samples.n_cols << "):\n" << mpts;
 #endif
      constexpr size_t elsize = sizeof(double);
-     size_t const ndim = 2;
-     size_t shape[ndim]{samples.n_rows, samples.n_cols};
-     size_t strides[ndim]{elsize, samples.n_rows * elsize};
-     return py::array_t<double>( shape, strides, samples.memptr() );
+     size_t mshape[2]{mpts.n_rows, mpts.n_cols};
+     size_t mstrides[2]{elsize, mpts.n_rows * elsize};
+     size_t vshape[2]{vlkh.n_elem, 1};
+     size_t vstrides[2]{elsize, vlkh.n_elem * elsize};
+     return std::make_tuple( py::array_t<double>( mshape, mstrides, mpts.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vlkh.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vprb.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vaux.memptr() ) );
    },
    py::return_value_policy::reference_internal,
    "retrieve dead points"
@@ -89,22 +108,31 @@ pyNSFEAS
  .def_property_readonly(
    "discard_points",
    []( NSFEAS const& self ){
-     arma::mat samples( 2+self.nu(), self.discard_points().size() );
-     size_t c=0;
-     for( auto const& [lkh,pcon] : self.discard_points() ){
-       double* mem = samples.colptr( c++ );
-       mem[0] = lkh;
-       mem[1] = pcon.first;
-       for( size_t i=0; i<self.nu(); ++i ) mem[2+i] = pcon.second[i]; 
+     arma::mat mpts( self.discard_points().size(), self.nu() );
+     arma::vec vlkh( self.discard_points().size() );
+     arma::vec vprb( self.discard_points().size() );
+     arma::vec vaux( self.discard_points().size() );
+     size_t r=0;
+     for( auto const& [lkh,val] : self.discard_points() ){
+       for( size_t c=0; c<self.nu(); ++c )
+         mpts(r,c) = std::get<0>(val)[c];
+       vlkh(r) = lkh;
+       vprb(r) = std::get<1>(val);
+       vaux(r) = std::get<2>(val);
+       ++r;
      }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-     std::cout << "samples( " << samples.n_rows << "," << samples.n_cols << "):\n" << samples;
+     std::cout << "mpts( " << samples.n_rows << "," << samples.n_cols << "):\n" << mpts;
 #endif
      constexpr size_t elsize = sizeof(double);
-     size_t const ndim = 2;
-     size_t shape[ndim]{samples.n_rows, samples.n_cols};
-     size_t strides[ndim]{elsize, samples.n_rows * elsize};
-     return py::array_t<double>( shape, strides, samples.memptr() );
+     size_t mshape[2]{mpts.n_rows, mpts.n_cols};
+     size_t mstrides[2]{elsize, mpts.n_rows * elsize};
+     size_t vshape[2]{vlkh.n_elem, 1};
+     size_t vstrides[2]{elsize, vlkh.n_elem * elsize};
+     return std::make_tuple( py::array_t<double>( mshape, mstrides, mpts.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vlkh.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vprb.memptr() ),
+                             py::array_t<double>( vshape, vstrides, vaux.memptr() ) );
    },
    py::return_value_policy::reference_internal,
    "retrieve discard points"
@@ -135,13 +163,17 @@ pyNSFEASOptions
    "reset options"
  )
  .def_readwrite( "FEASCRIT",  &NSFEAS::Options::FEASCRIT,  "selected feasibility criterion [Default: VAR]" )
- .def_readwrite( "FEASTHRES", &NSFEAS::Options::FEASTHRES, "percentile infeasibility threshold [Default: 0.1]" )
+ .def_readwrite( "FEASTHRES", &NSFEAS::Options::FEASTHRES, "percentile feasibility violation threshold [Default: 0.1]" )
+ .def_readwrite( "LKHCRIT",   &NSFEAS::Options::LKHCRIT,   "selected likelihood criterion [Default: VAR]" )
+ .def_readwrite( "LKHTHRES",  &NSFEAS::Options::LKHTHRES,  "percentile likelihood threshold [Default: 0.1]" )
+ .def_readwrite( "LKHTOL",    &NSFEAS::Options::LKHTOL,    "stopping tolerance for probability mass [Default: 0.05]" )
  .def_readwrite( "NUMLIVE",   &NSFEAS::Options::NUMLIVE,   "number of live points [Default: 256]" )
  .def_readwrite( "NUMPROP",   &NSFEAS::Options::NUMPROP,   "number of proposals [Default: 16]" )
  .def_readwrite( "ELLCONF",   &NSFEAS::Options::ELLCONF,   "chi-squared confidence in ellipsoidal nest [Default: 0.99]" )
  .def_readwrite( "ELLMAG",    &NSFEAS::Options::ELLMAG,    "initial magnification of ellipsoidal nest [Default: 0.3]" )
  .def_readwrite( "ELLRED",    &NSFEAS::Options::ELLRED,    "reduction factor of ellipsoidal nest [Default: 0.2]" )
  .def_readwrite( "MAXITER",   &NSFEAS::Options::MAXITER,   "maximal number of iterations [Default: 0]" )
+ .def_readwrite( "MAXERR",    &NSFEAS::Options::MAXERR,    "maximal number of failed evaluations [Default: 0]" )
  .def_readwrite( "MAXCPU",    &NSFEAS::Options::MAXCPU,    "maximal walltime [Default: 0]" )
  .def_readwrite( "DISPLEVEL", &NSFEAS::Options::DISPLEVEL, "display level [Default: 1]" )
  .def_readwrite( "DISPITER",  &NSFEAS::Options::DISPITER,  "display frequency [Default: 25]" )

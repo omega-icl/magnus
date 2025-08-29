@@ -161,7 +161,7 @@ int main()
   mc::MODISCR DOE;
   DOE.options.CRITERION = mc::MODISCR::BRISK;
   DOE.options.RISK      = mc::MODISCR::Options::AVERSE;//NEUTRAL;//
-  DOE.options.CVARTHRES = 0.95;
+  DOE.options.CVARTHRES = 0.05;
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 1;
@@ -173,14 +173,14 @@ int main()
   //DOE.options.NLPSLV.GRADMETH = DOE.options.NLPSLV.FSYM;//FAD;
 
   DOE.set_dag( DAG );
-  DOE.set_models( { Y1, Y2 }, YVAR );
-  DOE.set_controls( X, XLB, XUB );
-  DOE.set_parameters( P, PSAM );
+  DOE.set_model( { Y1, Y2 }, YVAR );
+  DOE.set_control( X, XLB, XUB );
+  DOE.set_parameter( P, PSAM );
 
   //DOE.add_prior_campaign( prior_campaign );
 
   DOE.setup();
-  DOE.sample_supports( 64 );
+  DOE.sample_support( 64 );
   //DOE.file_export( "test0" );
   //DOE.combined_solve( 5, false ); // continuous design
   //auto CNTEFF = DOE.efforts();

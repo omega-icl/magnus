@@ -315,7 +315,7 @@ public:
       _FDPAR.resize( _np );
       for( size_t p=0; p<_np; ++p ){
         _FDPAR[p].diff( p, _np );
-#ifdef MC__FFMLE_DEBUG
+#ifdef MC__FFGRADMLE_DEBUG
         std::cout << "_FDPAR[" << p << "].diff(" << p << "," << _np << ")\n";
 #endif
       }
@@ -452,7 +452,7 @@ FFMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFBRCRIT_TRACE
+#ifdef MC__FFMLE_TRACE
   std::cout << "FFMLE::eval: FFVar\n"; 
 #endif
 
@@ -506,7 +506,7 @@ FFMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef CRONOS__FFMLE_TRACE
+#ifdef MC__FFMLE_TRACE
   std::cout << "FFMLE::eval: SLiftVar\n";
 #endif
 #ifdef MC__FFMLE_CHECK
@@ -522,7 +522,7 @@ FFGradMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFMLE_TRACE
+#ifdef MC__FFGRADMLE_TRACE
   std::cout << "FFGradMLE::eval: FFVar\n"; 
 #endif
 
@@ -537,7 +537,7 @@ FFGradMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFMLE_TRACE
+#ifdef MC__FFGRADMLE_TRACE
   std::cout << "FFGradMLE::eval: FFDep\n"; 
 #endif
 
@@ -553,7 +553,7 @@ FFGradMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFMLE_TRACE
+#ifdef MC__FFGRADMLE_TRACE
   std::cout << "FFGradMLE::eval: FFExpr\n";
 #endif
 #ifdef MC__FFGRADMLE_CHECK
@@ -579,7 +579,7 @@ FFGradMLE::eval
   unsigned const* mVar )
 const
 {
-#ifdef MC__FFMLE_TRACE
+#ifdef MC__FFGRADMLE_TRACE
   std::cout << "FFGradMLE::eval: SLiftVar\n";
 #endif
 #ifdef MC__FFGRADMLE_CHECK

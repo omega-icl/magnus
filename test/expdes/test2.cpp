@@ -131,7 +131,7 @@ int main()
   DOE.options.NLPSLV.DISPLEVEL   = 1;
   DOE.options.NLPSLV.GRADCHECK   = 0;
   DOE.options.NLPSLV.GRADMETH    = DOE.options.NLPSLV.FSYM;//FAD;
-  DOE.options.NLPSLV.GRADLSEARCH = 0;
+  DOE.options.NLPSLV.GRADLSEARCH = 1;
   DOE.options.NLPSLV.FCTPREC     = 1e-7;
   DOE.options.NLPSLV.OPTIMTOL    = 1e-6;
   DOE.set_dag( DAG );

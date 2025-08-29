@@ -345,11 +345,8 @@ PAREST::setup
 
   _vPAR.resize( _np );
   _dag->insert( BASE_PAREST::_dag, _np, BASE_PAREST::_vPAR.data(), _vPAR.data() );
-
-  if( _nc ){
-    _vCST.resize( _nc );
-    _dag->insert( BASE_PAREST::_dag, _nc, BASE_PAREST::_vCST.data(), _vCST.data() );
-  }
+  _vCST.resize( _nc );
+  _dag->insert( BASE_PAREST::_dag, _nc, BASE_PAREST::_vCST.data(), _vCST.data() );
 
   _sgOUT.clear();
   _sgOUT.resize( _nm );
@@ -833,7 +830,8 @@ PAREST::cov_linearized
 #endif
 
   // Parameter linearized covariance matrix
-  mc::FFODE::options.DIFF = mc::FFODE::Options::SYM_P;
+  //mc::FFODE::options.DIFF = mc::FFODE::Options::SYM_P;
+  mc::FFODE::options.SYMDIFF = vPARMLE;
   auto pDFMLE = dagmle.FAD( 1, &FMLE, _np, vPARMLE.data(), na, vMULMLE.data(), _nd, vYMMLE.data() );
 #ifdef MAGNUS__PAREST_CONF_DEBUG
   auto sgDFMLE = dagmle.subgraph( _np+na, pDFMLE );
@@ -847,7 +845,8 @@ PAREST::cov_linearized
   std::cout << "Lagrangian gradient\n " << arma::trans( arma::vec( dDFMLE.data(), _np+na, false ) );
 #endif
 
-  mc::FFODE::options.DIFF = mc::FFODE::Options::NUM_P;
+  //mc::FFODE::options.DIFF = mc::FFODE::Options::NUM_P;
+  mc::FFODE::options.SYMDIFF.clear();
   auto tD2FMLE = dagmle.SFAD( _np+na+_nd, pDFMLE, _np, _vPAR.data(), na, vMULMLE.data() );
   size_t const ne = std::get<0>( tD2FMLE );
   std::vector<double> dD2FMLE( ne );

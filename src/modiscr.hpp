@@ -5,7 +5,7 @@
 /*!
 \page page_MODISCR Design of Experiments for Model Discrimination
 \author Benoit Chachuat <tt>(b.chachuat@imperial.ac.uk)</tt>
-\version 0.1
+\version 0.2
 \date 2025
 \bug No known bugs.
 */
@@ -30,7 +30,7 @@
 
 #ifdef MC__USE_GUROBI
  #include "mipslv_gurobi.hpp"
-#elif  MC__USE_IPOPT
+#elif  MC__USE_CPLEX
  #include "mipslv_cplex.hpp"
 #endif
 
@@ -98,6 +98,9 @@ private:
   //! @brief local copy of model parameters
   std::vector<FFVar> _vPAR;
 
+  //! @brief local copy of model constants
+  std::vector<FFVar> _vCST;
+
   //! @brief local copy of experimental controls
   std::vector<FFVar> _vCON;
 
@@ -144,13 +147,25 @@ public:
   struct Options
   {
     //! @brief Constructor
-    Options():
-      CRITERION(BASE_MBDOE::BRISK), RISK(NEUTRAL), CVARTHRES(0.9),
-      MINDIST(1e-6), MAXITER(4), TOLITER(1e-4), DISPLEVEL(0),
-      MINLPSLV(), NLPSLV()
+    Options()
+      : MINLPSLV(), NLPSLV()
       {
+        reset();
+      }
+
+    //! @brief Reset to default options
+    void reset
+      ()
+      {
+        CRITERION                   = BASE_MBDOE::BRISK;
+        RISK                        = AVERSE;
+        CVARTHRES                   = 0.10;
+        MINDIST                     = 1e-6;
+        MAXITER                     = 4;
+        TOLITER                     = 1e-4;
+        DISPLEVEL                   = 1;
 #ifdef MC__USE_SNOPT
-        NLPSLV.DISPLEVEL            = 0;
+        NLPSLV.DISPLEVEL            = DISPLEVEL;
         NLPSLV.MAXITER              = 500;
         NLPSLV.FEASTOL              = 1e-6;
         NLPSLV.OPTIMTOL             = 1e-6;
@@ -158,7 +173,7 @@ public:
         NLPSLV.GRADCHECK            = 0;
         NLPSLV.MAXTHREAD            = 0;
 #elif  MC__USE_IPOPT
-        NLPSLV.DISPLEVEL            = 0;
+        NLPSLV.DISPLEVEL            = DISPLEVEL;
         NLPSLV.MAXITER              = 500;
         NLPSLV.FEASTOL              = 1e-6;
         NLPSLV.OPTIMTOL             = 1e-5;
@@ -167,6 +182,7 @@ public:
         NLPSLV.GRADCHECK            = 0;
         NLPSLV.MAXTHREAD            = 0;
 #endif
+        MINLPSLV.reset();
         MINLPSLV.SEARCHALG          = MINLP::Options::OA;
         MINLPSLV.DISPLEVEL          = DISPLEVEL;
         MINLPSLV.CVRTOL             = 1e-5;
@@ -176,10 +192,10 @@ public:
         MINLPSLV.ROOTCUT            = 1;
         MINLPSLV.TIMELIMIT          = 36e2;
         MINLPSLV.LINMETH            = MINLP::Options::CVX;
-        MINLPSLV.MAXITER            = 40;
+        MINLPSLV.MAXITER            = 200;
         MINLPSLV.MSLOC              = 1;
         MINLPSLV.CPMAX              = 5;
-        MINLPSLV.NLPSLV             = NLPSLV;
+        MINLPSLV.NLPSLV.DISPLEVEL   = 0;
 #ifdef MC__USE_GUROBI
         MINLPSLV.MIPSLV.DISPLEVEL   = 0;
         MINLPSLV.MIPSLV.THREADS     = 0;
@@ -238,6 +254,7 @@ public:
     enum TYPE{
       BADSIZE=0,    //!< Inconsistent dimensions
       NOMODEL,	    //!< Unspecified model
+      BADCONST,	    //!< Unspecified constants
       BADCRIT,      //!< Misspecified design criterion
       INTERN=-33    //!< Internal error
     };
@@ -252,6 +269,8 @@ public:
           return "MODISCR::Exceptions  Inconsistent dimensions";
         case NOMODEL:
           return "MODISCR::Exceptions  Unspecified model";
+        case BADCONST:
+          return "MODISCR::Exceptions  Unspecified constants";
         case BADCRIT:
           return "MODISCR::Exceptions  Misspecified design criterion";
         case INTERN:
@@ -312,11 +331,12 @@ public:
   //! @brief Evaluate performance of experimental campaign
   std::pair<double,bool> evaluate_design
     ( std::list<std::pair<double,std::vector<double>>> const& Campaign, std::string const& type="",
-      std::ostream& os=std::cout );
+      std::vector<double> const& vcst=std::vector<double>(), std::ostream& os=std::cout );
 
   //! @brief Generate <a>NSAM</a> initial supports
-  bool sample_supports
-    ( size_t const NSAM, std::ostream& os=std::cout );
+  bool sample_support
+    ( size_t const NSAM, std::vector<double> const& vcst=std::vector<double>(),
+      std::ostream& os=std::cout );
 
   //! @brief Solve effort-based exact experiment design with <a>NEXP</a> supports
   void effort_solve
@@ -326,13 +346,13 @@ public:
 
   //! @brief Solve gradient-based experiment design for refinement of <a>EOpt</a> supports 
   void gradient_solve
-    ( std::map<size_t,double> const& EOpt, bool const update=true,
-      std::ostream& os=std::cout );
+    ( std::map<size_t,double> const& EOpt,  std::vector<double> const& vcst=std::vector<double>(),
+      bool const update=true, std::ostream& os=std::cout );
 
   //! @brief Solve combined effort- and gradient-based experiment design with <a>NEXP</a> supports 
   void combined_solve
-    ( size_t const NEXP, bool const exact=true, 
-     std::map<size_t,double> const& EIni=std::map<size_t,double>(),
+    ( size_t const NEXP,  std::vector<double> const& vcst=std::vector<double>(),
+     bool const exact=true, std::map<size_t,double> const& EIni=std::map<size_t,double>(),
      std::ostream& os=std::cout );
 
   //! @brief Export effort, support and fim to file
@@ -340,13 +360,13 @@ public:
     ( std::string const& name );
 
   //! @brief Retrieve optimized efforts  
-  std::map<size_t,double> const& efforts
+  std::map<size_t,double> const& effort
     ()
     const
     { return _EOpt; }
 
   //! @brief Retrieve optimized supports
-  std::map<size_t,std::vector<double>> const& supports
+  std::map<size_t,std::vector<double>> const& support
     ()
     const
     { return _SOpt; }
@@ -362,8 +382,15 @@ public:
     ()
     const;
 
+  //! @brief Retrieve sampled controls
+  std::vector< std::vector< double > > const& control_sample
+    ()
+    const
+    { return _vCONSAM; }
+
+
   //! @brief Retrieve sampled outputs
-  std::vector<std::vector<std::vector<arma::vec>>> const& output_samples
+  std::vector<std::vector<std::vector<arma::vec>>> const& output_sample
     ()
     const
     { return _vOUTSAM; }
@@ -411,23 +438,23 @@ protected:
 
   //! @brief Evaluate Bayes risk-neutral criterion
   double _evaluate_BRNeutral
-    ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-      std::vector<double> const& CTOT0, std::ostream& os );
+    ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+      std::vector<double> const& UTOT0, std::ostream& os );
 
   //! @brief Evaluate Bayes risk-averse criterion
   double _evaluate_BRAverse
-    ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-      std::vector<double> const& CTOT0, std::ostream& os );
+    ( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+      std::vector<double> const& UTOT0, std::ostream& os );
 
   //! @brief Set Bayes risk-neutral criterion in gradient-based NLP model
   void _refine_set_BRNeutral
-    ( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-      std::vector<double> const& CTOT0, std::ostream& os );
+    ( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+      std::vector<double> const& UTOT0, std::ostream& os );
 
   //! @brief Set Bayes risk-averse criterion in gradient-based NLP model
   void _refine_set_BRAverse
-    ( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-      std::vector<double>& CTOT0, std::ostream& os );
+    ( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+      std::vector<double>& UTOT0, std::ostream& os );
 
   //! @brief Generate samples for refined supports
   bool _update_supports
@@ -492,10 +519,12 @@ MODISCR::_setup_out
   delete _dag; _dag = new DAG;
   _dag->options = BASE_MBDOE::_dag->options;
 
-  _vCON.resize( _nc );
-  _dag->insert( BASE_MBDOE::_dag, _nc, BASE_MBDOE::_vCON.data(), _vCON.data() );
+  _vCON.resize( _nu );
+  _dag->insert( BASE_MBDOE::_dag, _nu, BASE_MBDOE::_vCON.data(), _vCON.data() );
   _vPAR.resize( _np );
   _dag->insert( BASE_MBDOE::_dag, _np, BASE_MBDOE::_vPAR.data(), _vPAR.data() );
+  _vCST.resize( _nc );
+  _dag->insert( BASE_MBDOE::_dag, _nc, BASE_MBDOE::_vCST.data(), _vCST.data() );
   _vOUT.resize( _nm );
   _vOUTVEC.clear(); _vOUTVEC.reserve( _nm * _ny );
   _sgOUT.resize( _nm );
@@ -515,23 +544,27 @@ MODISCR::_setup_out
 
 inline
 bool
-MODISCR::sample_supports
-( size_t const NSAM, std::ostream& os )
+MODISCR::sample_support
+( size_t const NSAM, std::vector<double> const& vcst, std::ostream& os )
 {
   auto&& t_samgen = stats.start();
+
+  // Update constants
+  if( vcst.size() && vcst.size() == _nc ) _vCSTVAL = vcst;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
 
   // Control samples
   typedef boost::random::sobol_engine< boost::uint_least64_t, 64u > sobol64;
   typedef boost::variate_generator< sobol64, boost::uniform_01< double > > qrgen;
-  sobol64 eng( _nc );
+  sobol64 eng( _nu );
   qrgen gen( eng, boost::uniform_01<double>() );
   gen.engine().seed( 0 );
 
   _vCONSAM.clear();
   _vCONSAM.reserve( NSAM );
   for( size_t s=0; s<NSAM; ++s ){
-    _vCONSAM.push_back( std::vector<double>( _nc ) );
-    for( size_t i=0; i<_nc; i++ )
+    _vCONSAM.push_back( std::vector<double>( _nu ) );
+    for( size_t i=0; i<_nu; i++ )
       _vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * gen();
   }
 
@@ -560,8 +593,9 @@ MODISCR::_sample_out
 ( size_t const NSAM, std::ostream& os )
 {
   auto&& tstart = stats.start();
+  int DISPFREQ = (_ne0+NSAM)/20;
   if( options.DISPLEVEL )
-    os << "** GENERATING SUPPORT SAMPLES " << std::flush;
+    os << "** GENERATING SUPPORT SAMPLES     |" << std::flush;
 
   // Reset and resize output/intermediate containers
   size_t NUNC = _vPARVAL.size();
@@ -573,21 +607,19 @@ MODISCR::_sample_out
   for( size_t e=0; e<_ne0; ++e ){
     if( !_append_out( _vCONAP[e], _vPARVAL, _dOUT, _vOUTSAM, os ) )
       return false;
-    if( options.DISPLEVEL > 1  && !(e%20) )
-      os << "." << std::flush;
+    if( options.DISPLEVEL  && !(e%DISPFREQ) )
+      os << "=" << std::flush;
   }
-  if( options.DISPLEVEL > 1 )
-    os << std::endl;
 
   // Compute responses for every control samples and uncertainty scenarios
   for( size_t e=0; e<NSAM; ++e ){
     if( !_append_out( _vCONSAM[e], _vPARVAL, _dOUT, _vOUTSAM, os ) )
         return false;
-    if( options.DISPLEVEL > 1  && !((e+_ne0)%20) )
-      os << "." << std::flush;
+    if( options.DISPLEVEL  && !((e+_ne0)%DISPFREQ) )
+      os << "=" << std::flush;
   }
   if( options.DISPLEVEL )
-    os << "(" << NUNC*(_ne0+NSAM) << ")"
+    os << "| " << NUNC*(_ne0+NSAM)
        << std::right << std::fixed << std::setprecision(2)
        << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
 
@@ -607,7 +639,8 @@ MODISCR::_append_out
   for( size_t m=0; m<_nm; ++m ){
     // Compute Output of model m for Control in all uncertainty scenarios Parameter
     try{
-      _dag->veval( _sgOUT[m], _wkOUT, _vOUT[m], Output, _vPAR, Parameter, _vCON, Control );
+      if( _nc ) _dag->veval( _sgOUT[m], _wkOUT, _vOUT[m], Output, _vPAR, Parameter, _vCON, Control, _vCST, _vCSTVAL );
+      else      _dag->veval( _sgOUT[m], _wkOUT, _vOUT[m], Output, _vPAR, Parameter, _vCON, Control );
     }
     catch(...){
       return false;
@@ -704,7 +737,7 @@ MODISCR::_update_supports
     }
   }
 
-  // Add samples for refined controls
+  // Add samples for refined supports
   for( size_t s=posSupp; s<posSupp+newSupp; ++s ){
 
     switch( options.CRITERION ){
@@ -765,8 +798,8 @@ MODISCR::file_export
 inline
 void
 MODISCR::combined_solve
-( size_t const NEXP, bool const exact, std::map<size_t,double> const& EIni,
-  std::ostream& os )
+( size_t const NEXP, std::vector<double> const& vcst, bool const exact,
+  std::map<size_t,double> const& EIni, std::ostream& os )
 {
   _EOpt = EIni;
   double VLast;
@@ -778,7 +811,7 @@ MODISCR::combined_solve
       break;
     }
 
-    gradient_solve( _EOpt, true, os );
+    gradient_solve( _EOpt, vcst, true, os );
     VLast = _VOpt;
     if( ++it >= options.MAXITER ){
       if( options.DISPLEVEL )
@@ -832,7 +865,7 @@ const
     doe.add_ctr( BASE_OPT::GE, VaR + DELTA[s] - *(vBRCrit[s]) );
   }
 
-  doe.set_obj( BASE_OPT::MIN, VaR + Sum( DELTA, _vPARWEI ) / ( 1. - options.CVARTHRES ) );
+  doe.set_obj( BASE_OPT::MIN, VaR + Sum( DELTA, _vPARWEI ) / options.CVARTHRES );
 
   E0.insert( E0.end(), NUNC+1, 0e0 );
 }
@@ -944,8 +977,8 @@ const
 inline
 double
 MODISCR::_evaluate_BRNeutral
-( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-  std::vector<double> const& CTOT0, std::ostream& os )
+( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+  std::vector<double> const& UTOT0, std::ostream& os )
 {
   // Check supports for a priori experiments
   if( !_vEFFAP.empty() && _vOUTSAM.empty() ){
@@ -957,7 +990,8 @@ MODISCR::_evaluate_BRNeutral
 
   // Define Bayes risk criterion
   FFBRMMCrit OpBR;
-  FFVar const*const* ppBR = OpBR( CTOT.data(), _dag, _nm, &_vPAR, &_vCON, &_vOUTVEC, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP );
+  FFVar const*const* ppBR = OpBR( UTOT.data(), _dag, _nm, &_vPAR, &_vCST, &_vCON, &_vOUTVEC, &EOpt,
+                                  &_vPARVAL, &_vCSTVAL, &_vOUTSAM, &_vEFFAP );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
   _dagdoe->output( _dagdoe->subgraph( 1, ppBR[0] ), " ppBRMM[0]" );
 #endif
@@ -968,23 +1002,23 @@ MODISCR::_evaluate_BRNeutral
 
   // Evaluate average BR criterion
   double DBR = 0./0.;
-  _dagdoe->eval( 1, &FBR, &DBR, CTOT.size(), CTOT.data(), CTOT0.data() );
+  _dagdoe->eval( 1, &FBR, &DBR, UTOT.size(), UTOT.data(), UTOT0.data() );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
-  auto&& FGRADBR  = _dagdoe->FAD( { FBR }, CTOT );
+  auto&& FGRADBR  = _dagdoe->FAD( { FBR }, UTOT );
   std::vector<double> DGRADBR;
-  _dagdoe->eval( FGRADBR, DGRADBR, CTOT, CTOT0 );
+  _dagdoe->eval( FGRADBR, DGRADBR, UTOT, UTOT0 );
   double const RTOL = 1e-5, ATOL = 1e-5;
-  for( size_t i=0; i<CTOT.size(); i++ ){
-    auto CTOT0_pert = CTOT0;
-    CTOT0_pert[i] = CTOT0[i] * ( 1 + RTOL ) + ATOL;
+  for( size_t i=0; i<UTOT.size(); i++ ){
+    auto UTOT0_pert = UTOT0;
+    UTOT0_pert[i] = UTOT0[i] * ( 1 + RTOL ) + ATOL;
     double DBR_plus;
-    _dagdoe->eval( 1, &FBR, &DBR_plus, CTOT.size(), CTOT.data(), CTOT0_pert.data() );
-    CTOT0_pert[i] = CTOT0[i] * ( 1 - RTOL ) - ATOL;
+    _dagdoe->eval( 1, &FBR, &DBR_plus, UTOT.size(), UTOT.data(), UTOT0_pert.data() );
+    UTOT0_pert[i] = UTOT0[i] * ( 1 - RTOL ) - ATOL;
     double DBR_minus;
-    _dagdoe->eval( 1, &FBR, &DBR_minus, CTOT.size(), CTOT.data(), CTOT0_pert.data() );
+    _dagdoe->eval( 1, &FBR, &DBR_minus, UTOT.size(), UTOT.data(), UTOT0_pert.data() );
     std::cout << std::scientific << std::setprecision(5);
-    std::cout << "d_CTOT[" << i << "] = " << 2*(CTOT0[i]-CTOT0_pert[i]) << std::endl;
-    std::cout << "grad BR[" << i << "] = " << (DBR_plus-DBR_minus)/(2*(CTOT0[i]-CTOT0_pert[i]))
+    std::cout << "d_UTOT[" << i << "] = " << 2*(UTOT0[i]-UTOT0_pert[i]) << std::endl;
+    std::cout << "grad BR[" << i << "] = " << (DBR_plus-DBR_minus)/(2*(UTOT0[i]-UTOT0_pert[i]))
                                  << "  <?>  " << DGRADBR[i] << std::endl;
   }
 #endif
@@ -995,8 +1029,8 @@ MODISCR::_evaluate_BRNeutral
 inline
 double
 MODISCR::_evaluate_BRAverse
-( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-  std::vector<double> const& CTOT0, std::ostream& os )
+( std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+  std::vector<double> const& UTOT0, std::ostream& os )
 {
   // Check supports for a priori experiments
   if( !_vEFFAP.empty() && _vOUTSAM.empty() ){
@@ -1008,7 +1042,8 @@ MODISCR::_evaluate_BRAverse
 
   // Define Bayes risk criterion
   FFBRMMCrit OpBR;
-  FFVar const*const* ppBR = OpBR( CTOT.data(), _dag, _nm, &_vPAR, &_vCON, &_vOUTVEC, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP );
+  FFVar const*const* ppBR = OpBR( UTOT.data(), _dag, _nm, &_vPAR, &_vCST, &_vCON, &_vOUTVEC, &EOpt,
+                                  &_vPARVAL, &_vCSTVAL, &_vOUTSAM, &_vEFFAP );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
   _dagdoe->output( _dagdoe->subgraph( 1, ppBR[0] ), " ppBRMM[0]" );
 #endif
@@ -1020,7 +1055,7 @@ MODISCR::_evaluate_BRAverse
     FBR[s] = *ppBR[s];
 
   // Evaluate cost function
-  _dagdoe->eval( FBR, DBR, CTOT, CTOT0 );
+  _dagdoe->eval( FBR, DBR, UTOT, UTOT0 );
 
   std::map<double,double> SA;
   for( size_t s=0; s<NUNC; ++s )
@@ -1029,7 +1064,7 @@ MODISCR::_evaluate_BRAverse
   double prsum = 0., VaR = 0.;
   for( auto const& [BR,pr] : SA ){
     VaR = BR;
-    if( prsum + pr > options.CVARTHRES ) break;
+    if( prsum + pr > 1. - options.CVARTHRES ) break;
     prsum += pr;
   }
   std::cout << "VaR = " << VaR << std::endl;
@@ -1037,7 +1072,7 @@ MODISCR::_evaluate_BRAverse
   double CVaR = VaR;
   for( auto const& [BR,pr] : SA ){
     if( BR < VaR ) continue;
-    CVaR += ( BR - VaR ) * pr / ( 1. - options.CVARTHRES );
+    CVaR += ( BR - VaR ) * pr / options.CVARTHRES;
   }
   std::cout << "CVaR = " << CVaR << std::endl;
 
@@ -1047,26 +1082,31 @@ MODISCR::_evaluate_BRAverse
 inline
 std::pair<double,bool>
 MODISCR::evaluate_design
-( std::list<std::pair<double,std::vector<double>>> const& Campaign, std::string const& type, std::ostream& os )
+( std::list<std::pair<double,std::vector<double>>> const& Campaign, std::string const& type,
+  std::vector<double> const& vcst, std::ostream& os )
 {
   // Define evaluation DAG
   delete _dagdoe; _dagdoe = new DAG;
 
   size_t const NSUP  = Campaign.size();
-  size_t const NCTOT = _nc * NSUP;
-  std::vector<FFVar> CTOT(NCTOT);  // Concatenate experimental controls
-  for( size_t i=0; i<NCTOT; i++ )
-    CTOT[i].set( _dagdoe );
+  size_t const NUTOT = _nu * NSUP;
+  std::vector<FFVar> UTOT(NUTOT);  // Concatenate experimental controls
+  for( size_t i=0; i<NUTOT; i++ )
+    UTOT[i].set( _dagdoe );
 
-  std::vector<double> CTOT0;
-  CTOT0.reserve(NCTOT);
+  std::vector<double> UTOT0;
+  UTOT0.reserve(NUTOT);
   std::map<size_t,double> EOpt;
   size_t ieff = 0;
   for( auto const& [eff,supp] : Campaign ){
     EOpt[ieff++] = eff;
-    CTOT0.insert( CTOT0.end(), supp.cbegin(), supp.cend() );
+    UTOT0.insert( UTOT0.end(), supp.cbegin(), supp.cend() );
   }
-  
+
+  // Update constants
+  if( vcst.size() && vcst.size() == _nc ) _vCSTVAL = vcst;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
   // Update external operations
   FFDOEBase::set_weighting( _vOUTWEI );
   FFDOEBase::set_scaling( _mPARSCA );
@@ -1082,10 +1122,10 @@ MODISCR::evaluate_design
       case BRISK:
         switch( options.RISK){
           case Options::NEUTRAL:
-            crit = _evaluate_BRNeutral( EOpt, CTOT, CTOT0, os );
+            crit = _evaluate_BRNeutral( EOpt, UTOT, UTOT0, os );
             break;
           case Options::AVERSE:
-            crit = _evaluate_BRAverse( EOpt, CTOT, CTOT0, os );
+            crit = _evaluate_BRAverse( EOpt, UTOT, UTOT0, os );
             break;
           default:
             throw Exceptions( Exceptions::BADCRIT );
@@ -1111,8 +1151,8 @@ MODISCR::evaluate_design
 inline
 void
 MODISCR::_refine_set_BRNeutral
-( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-  std::vector<double> const& CTOT0, std::ostream& os )
+( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+  std::vector<double> const& UTOT0, std::ostream& os )
 {
   // Check supports for a priori experiments
   if( !_vEFFAP.empty() && _vOUTSAM.empty() )
@@ -1120,7 +1160,8 @@ MODISCR::_refine_set_BRNeutral
 
   // Define Bayes risk objective
   FFBRMMCrit OpBR;
-  FFVar const*const* ppBR = OpBR( CTOT.data(), _dag, _nm, &_vPAR, &_vCON, &_vOUTVEC, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP );
+  FFVar const*const* ppBR = OpBR( UTOT.data(), _dag, _nm, &_vPAR, &_vCST, &_vCON, &_vOUTVEC, &EOpt,
+                                  &_vPARVAL, &_vCSTVAL, &_vOUTSAM, &_vEFFAP );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
   _dagdoe->output( _dagdoe->subgraph( 1, ppBR[0] ), " BRCrit" );
 #endif
@@ -1130,22 +1171,22 @@ MODISCR::_refine_set_BRNeutral
   FFVar FBR = Sum( NUNC, ppBR, _vPARWEI.data() );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
   double DBR;
-  _dagdoe->eval( 1, &FBR, &DBR, CTOT.size(), CTOT.data(), CTOT0.data() );
+  _dagdoe->eval( 1, &FBR, &DBR, UTOT.size(), UTOT.data(), UTOT0.data() );
   std::cout << "Crit = " << DBR << std::endl;
-  auto&& FGRADBR  = _dagdoe->FAD( { FBR }, CTOT );
+  auto&& FGRADBR  = _dagdoe->FAD( { FBR }, UTOT );
   std::vector<double> DGRADBR;
-  _dagdoe->eval( FGRADBR, DGRADBR, CTOT, CTOT0 );
+  _dagdoe->eval( FGRADBR, DGRADBR, UTOT, UTOT0 );
   std::cout << "Grad Cit AD = " << arma::trans( arma::vec( DGRADBR.data(), DGRADBR.size(), false ) ) << std::endl;
   double const TOL = 1e-3;
-  for( size_t i=0; i<CTOT.size(); ++i ){
-    std::vector<double> CTOT1 = CTOT0;
-    CTOT1[i] = CTOT0[i] + std::fabs(CTOT0[i])*TOL + TOL;
-    _dagdoe->eval( 1, &FBR, &DBR, CTOT.size(), CTOT.data(), CTOT1.data() );
+  for( size_t i=0; i<UTOT.size(); ++i ){
+    std::vector<double> UTOT1 = UTOT0;
+    UTOT1[i] = UTOT0[i] + std::fabs(UTOT0[i])*TOL + TOL;
+    _dagdoe->eval( 1, &FBR, &DBR, UTOT.size(), UTOT.data(), UTOT1.data() );
     DGRADBR[i] = DBR;
-    CTOT1[i] = CTOT0[i] - std::fabs(CTOT0[i])*TOL - TOL;
-    _dagdoe->eval( 1, &FBR, &DBR, CTOT.size(), CTOT.data(), CTOT1.data() );
+    UTOT1[i] = UTOT0[i] - std::fabs(UTOT0[i])*TOL - TOL;
+    _dagdoe->eval( 1, &FBR, &DBR, UTOT.size(), UTOT.data(), UTOT1.data() );
     DGRADBR[i] -= DBR;
-    DGRADBR[i] /= std::fabs(CTOT0[i])*2*TOL + 2*TOL;
+    DGRADBR[i] /= std::fabs(UTOT0[i])*2*TOL + 2*TOL;
   }
   std::cout << "Grad Cit FD = " << arma::trans( arma::vec( DGRADBR.data(), DGRADBR.size(), false ) ) << std::endl;
   { int dum; std::cout << "Paused"; std::cin >> dum; }
@@ -1156,8 +1197,8 @@ MODISCR::_refine_set_BRNeutral
 inline
 void
 MODISCR::_refine_set_BRAverse
-( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& CTOT,
-  std::vector<double>& CTOT0, std::ostream& os )
+( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
+  std::vector<double>& UTOT0, std::ostream& os )
 {
   // Check supports for a priori experiments
   if( !_vEFFAP.empty() && _vOUTSAM.empty() )
@@ -1165,7 +1206,8 @@ MODISCR::_refine_set_BRAverse
 
   // Define Bayes risk objective
   FFBRMMCrit OpBR;
-  FFVar const*const* ppBR = OpBR( CTOT.data(), _dag, _nm, &_vPAR, &_vCON, &_vOUTVEC, &EOpt, &_vPARVAL, &_vOUTSAM, &_vEFFAP );
+  FFVar const*const* ppBR = OpBR( UTOT.data(), _dag, _nm, &_vPAR, &_vCST, &_vCON, &_vOUTVEC, &EOpt,
+                                  &_vPARVAL, &_vCSTVAL, &_vOUTSAM, &_vEFFAP );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
   _dagdoe->output( _dagdoe->subgraph( 1, ppBR[0] ), " BRCrit" );
 #endif
@@ -1176,15 +1218,15 @@ MODISCR::_refine_set_BRAverse
   for( auto& Dk : DELTA )
     Dk.set( _dagdoe );
   if( _ROpt.size() == NUNC+1 )
-    for( auto const& r0 : _ROpt ) CTOT0.push_back( r0 ); 
+    for( auto const& r0 : _ROpt ) UTOT0.push_back( r0 ); 
   else
-    CTOT0.resize( CTOT.size()+NUNC+1, 0e0 );
+    UTOT0.resize( UTOT.size()+NUNC+1, 0e0 );
   doeref.add_var( DELTA, 0e0 );//, 1e2 );
   doeref.add_var( VaR );//, -1e2, 1e2 );
 
   // Minimize risk-averse Bayes risk criterion
   FFLin<I> Sum;
-  doeref.set_obj( BASE_OPT::MIN, VaR + Sum( NUNC, DELTA.data(), _vPARWEI.data() ) / ( 1. - options.CVARTHRES ) );  
+  doeref.set_obj( BASE_OPT::MIN, VaR + Sum( NUNC, DELTA.data(), _vPARWEI.data() ) / options.CVARTHRES );  
   for( size_t s=0; s<NUNC; s++ )
     doeref.add_ctr( BASE_OPT::GE, VaR + DELTA[s] - *ppBR[s] );
 }
@@ -1192,7 +1234,8 @@ MODISCR::_refine_set_BRAverse
 inline
 void
 MODISCR::gradient_solve
-( std::map<size_t,double> const& EOpt, bool const update, std::ostream& os )
+( std::map<size_t,double> const& EOpt,  std::vector<double> const& vcst,
+  bool const update, std::ostream& os )
 {
   auto&& t_slvnlp = stats.start();
 
@@ -1200,26 +1243,30 @@ MODISCR::gradient_solve
   delete _dagdoe; _dagdoe = new DAG;
   
   size_t const NSUP = EOpt.size();
-  size_t const NCTOT = _nc * NSUP;
-  std::vector<FFVar> CTOT(NCTOT);  // Concatenated experimental controls
-  for( size_t i=0; i<NCTOT; i++ )
-    CTOT[i].set( _dagdoe );
+  size_t const NUTOT = _nu * NSUP;
+  std::vector<FFVar> UTOT(NUTOT);  // Concatenated experimental controls
+  for( size_t i=0; i<NUTOT; i++ )
+    UTOT[i].set( _dagdoe );
 
-  std::vector<double> CTOT0, CTOTLB, CTOTUB;
-  CTOT0.reserve(NCTOT);
-  CTOTLB.reserve(NCTOT);
-  CTOTUB.reserve(NCTOT);
+  std::vector<double> UTOT0, UTOTLB, UTOTUB;
+  UTOT0.reserve(NUTOT);
+  UTOTLB.reserve(NUTOT);
+  UTOTUB.reserve(NUTOT);
   for( auto const& [ndx,eff] : EOpt ){
-    CTOT0.insert( CTOT0.end(), _vCONSAM[ndx].cbegin(), _vCONSAM[ndx].cend() );
+    UTOT0.insert( UTOT0.end(), _vCONSAM[ndx].cbegin(), _vCONSAM[ndx].cend() );
 #ifdef MAGNUS__MODISCR_SOLVE_DEBUG
     std::cout << "C[" << ndx << "] = ";
-    for( size_t i=0; i<_nc; i++ )
+    for( size_t i=0; i<_nu; i++ )
       std::cout << _vCONSAM[ndx][i] << "  ";
     std::cout << std::endl;
 #endif
-    CTOTLB.insert( CTOTLB.end(), _vCONLB.cbegin(), _vCONLB.cend() );
-    CTOTUB.insert( CTOTUB.end(), _vCONUB.cbegin(), _vCONUB.cend() );
+    UTOTLB.insert( UTOTLB.end(), _vCONLB.cbegin(), _vCONLB.cend() );
+    UTOTUB.insert( UTOTUB.end(), _vCONUB.cbegin(), _vCONUB.cend() );
   }
+
+  // Update constants
+  if( vcst.size() && vcst.size() == _nc ) _vCSTVAL = vcst;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
 
   // Update external operations
   FFDOEBase::set_weighting( _vOUTWEI );
@@ -1231,16 +1278,16 @@ MODISCR::gradient_solve
   NLP doeref;
   doeref.options = options.NLPSLV;
   doeref.set_dag( _dagdoe );
-  doeref.add_var( CTOT, CTOTLB, CTOTUB );
+  doeref.add_var( UTOT, UTOTLB, UTOTUB );
 
   switch( options.CRITERION ){
     case BRISK:
       switch( options.RISK){
         case Options::NEUTRAL:
-          _refine_set_BRNeutral( doeref, EOpt, CTOT, CTOT0, os );
+          _refine_set_BRNeutral( doeref, EOpt, UTOT, UTOT0, os );
           break;
         case Options::AVERSE:
-          _refine_set_BRAverse( doeref, EOpt, CTOT, CTOT0, os );
+          _refine_set_BRAverse( doeref, EOpt, UTOT, UTOT0, os );
           break;
         default:
           throw Exceptions( Exceptions::BADCRIT );
@@ -1252,7 +1299,7 @@ MODISCR::gradient_solve
   }
 
   doeref.setup();
-  doeref.solve( CTOT0.data() );
+  doeref.solve( UTOT0.data() );
 
   if( options.DISPLEVEL > 1 )
     os << "#  FEASIBLE:   " << doeref.is_feasible( 1e-6 )   << std::endl
@@ -1268,12 +1315,12 @@ MODISCR::gradient_solve
      || doeref.get_status() == NLP::INTERRUPTED ){
       double const* dC = doeref.solution().x.data();
       for( auto const& [ndx,eff] : EOpt ){
-        _SOpt[ndx] = std::vector<double>( dC, dC+_nc );
-        dC += _nc;
+        _SOpt[ndx] = std::vector<double>( dC, dC+_nu );
+        dC += _nu;
       }
       _update_supports( _EOpt, _SOpt, os );
       _VOpt = doeref.solution().f[0];
-      size_t const NEXTRA = doeref.solution().x.size() - NCTOT;
+      size_t const NEXTRA = doeref.solution().x.size() - NUTOT;
       if( NEXTRA > 0 )
         _ROpt.assign( dC, dC+NEXTRA );
     }

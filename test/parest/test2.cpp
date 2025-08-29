@@ -156,7 +156,7 @@ int main()
   //PE.mle_solve( 10, C0 );
   auto MLEOPT   = PE.mle();
   auto CHI2TEST = PE.chi2_test( 0.95 );
-  auto BCOV     = PE.cov_bootstrap( 200 );
+  //auto BCOV     = PE.cov_bootstrap( 200 );
   auto LCOV     = PE.cov_linearized();
   auto CINTT    = PE.conf_interval( LCOV, 0.95, "T" );
   auto CELLF    = PE.conf_ellipsoid( LCOV, 0, 1, 0.95, "F" );

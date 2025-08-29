@@ -180,10 +180,10 @@ pyPAREST
    py::arg("rhs")=mc::FFVar(0.),
    "add constraint"
  )
- .def_static(
-   "sobol_sample",
-   static_cast<std::list<std::vector<double>> (*)(size_t, std::vector<double> const&, std::vector<double> const&)>(&PAREST::uniform_sample)
- )
+ //.def_static(
+ //  "sobol_sample",
+ //  static_cast<std::list<std::vector<double>> (*)(size_t, std::vector<double> const&, std::vector<double> const&)>(&PAREST::uniform_sample)
+ //)
  .def_property_readonly(
    "mle",
    []( PAREST const& self ){ return self.mle(); },

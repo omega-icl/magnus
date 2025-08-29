@@ -95,7 +95,8 @@ public:
 
   //! @brief Set model outputs for single model
   void set_model
-    ( std::vector<FFVar> const& Y, std::vector<double> const& varY=std::vector<double>() )
+    ( std::vector<FFVar> const& Y,
+      std::vector<double> const& varY=std::vector<double>() )
     {
       assert( !Y.empty() );
       _nm = 1;
@@ -107,7 +108,8 @@ public:
 
   //! @brief Set model outputs for multiple candidate models
   void set_model
-    ( std::list<std::vector<FFVar>> const& l_Y, std::vector<double> const& varY=std::vector<double>() )
+    ( std::list<std::vector<FFVar>> const& l_Y,
+      std::vector<double> const& varY=std::vector<double>() )
     {
       assert( !l_Y.empty() && !l_Y.front().empty() );
       _nm = l_Y.size();
@@ -252,7 +254,6 @@ public:
       _vCONAP.clear();
       _vEFFAP.clear();
       _ne0 = 0;
-
     }
 
   //! @brief Retreive prior experimental campaign
@@ -280,8 +281,22 @@ public:
 private:
 
   //! @brief Private methods to block default compiler methods
-  BASE_MBDOE( BASE_MBDOE const& ) = delete;
-  BASE_MBDOE& operator=( BASE_MBDOE const& ) = delete;
+  BASE_MBDOE
+    ( BASE_MBDOE const& )
+    = delete;
+  BASE_MBDOE& operator=
+    ( BASE_MBDOE const& )
+    = delete;
+  void set_loglikelihood
+    ( FFVar const& LL )
+    = delete;
+  void reset_loglikelihood
+    ()
+    = delete;
+  std::vector<FFVar> const& var_loglikelihood
+    ()
+    const
+    = delete;
 };
 
 inline void

@@ -60,15 +60,15 @@ int main()
   NS.sample();// { GL, GU } );
 
   NS.stats.display();
-  
-  for( auto const& [lkh,pcon] : NS.live_points() ){
+
+  for( auto const& [feas,point] : NS.live_points() ){
     std::cout << std::scientific << std::setprecision(5)
-              << std::setw(15) << lkh
-              << std::setw(15) << pcon.first;
+              << std::setw(15) << feas
+              << std::setw(15) << std::get<1>(point);
     for( unsigned i=0; i<NX; ++i )
-      std::cout << std::setw(15) << pcon.second[i];
+      std::cout << std::setw(15) << std::get<0>(point)[i];
     std::cout << std::endl;
   }
-  
+ 
   return 0;
 }
