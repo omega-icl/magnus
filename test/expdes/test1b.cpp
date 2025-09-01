@@ -274,9 +274,9 @@ int main()
 
   // Linearised confidence region
   size_t const NYM = YMMLE.size();
-  mc::FFODE::options.DIFF = mc::FFODE::Options::SYM_P;
+  mc::FFODE::options.SYMDIFF = K;
   auto DFMLE = DAG.FAD( 1, &FMLE, NK, K.data(), NYM, YMMLE.data() );
-  mc::FFODE::options.DIFF = mc::FFODE::Options::NUM_P;
+  mc::FFODE::options.SYMDIFF.clear();
   auto D2FMLE = DAG.SFAD( NK+NYM, DFMLE, NK, K.data() );
   size_t const NELE = std::get<0>(D2FMLE);
   std::vector<double> dD2FMLE( NELE );

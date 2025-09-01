@@ -235,8 +235,8 @@ int main()
   DOE.sample_support( NSAM );
   //DOE.combined_solve( NEXP );
   DOE.effort_solve( NEXP );//, false );
-  DOE.gradient_solve( DOE.effort(), true );
-  //DOE.effort_solve( 5, DOE.effort() );
+  DOE.gradient_solve( DOE.effort(), std::vector<double>(), true );
+  //DOE.effort_solve( 5, true, DOE.effort() );
   DOE.file_export( "test7_N="+std::to_string(NEXP)+"_"+std::to_string(NSAM) );
   DOE.stats.display();
   

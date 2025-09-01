@@ -77,8 +77,8 @@ int main()
 
   //DOE.combined_solve( 5 );
   DOE.effort_solve( 6 );//, false );
-  DOE.gradient_solve( DOE.effort(), true );
-  //DOE.effort_solve( 5, DOE.effort() );
+  DOE.gradient_solve( DOE.effort(), std::vector<double>(), true );
+  //DOE.effort_solve( 5, true, DOE.effort() );
   //DOE.file_export( "test0b" );
   auto campaign = DOE.campaign();
 
