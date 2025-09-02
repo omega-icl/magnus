@@ -379,18 +379,18 @@ public:
       std::ostream& os=std::cout );
 
   //! @brief Solve effort-based exact experiment design with <a>NEXP</a> supports
-  void effort_solve
+  int effort_solve
     ( size_t const NEXP, bool const exact=true, 
      std::map<size_t,double> const& EIni=std::map<size_t,double>(),
      std::ostream& os=std::cout );
 
   //! @brief Solve gradient-based experiment design for refinement of <a>EOpt</a> supports 
-  void gradient_solve
+  int gradient_solve
     ( std::map<size_t,double> const& EOpt, std::vector<double> const& vcst=std::vector<double>(),
       bool const update=true, std::ostream& os=std::cout );
 
   //! @brief Solve combined effort- and gradient-based experiment design with <a>NEXP</a> supports 
-  void combined_solve
+  int combined_solve
     ( size_t const NEXP, std::vector<double> const& vcst=std::vector<double>(),
      bool const exact=true,  std::map<size_t,double> const& EIni=std::map<size_t,double>(),
      std::ostream& os=std::cout );
@@ -1279,22 +1279,29 @@ EXPDES::file_export
 }
 
 inline
-void
+int
 EXPDES::combined_solve
 ( size_t const NEXP, std::vector<double> const& vcst, bool const exact,
   std::map<size_t,double> const& EIni, std::ostream& os )
 {
   _EOpt = EIni;
   double VLast;
+  int flag = -33;
+  
   for( int it=0; ; ){
-    effort_solve( NEXP, exact, _EOpt, os );
+    flag = effort_solve( NEXP, exact, _EOpt, os );
     if( it && std::fabs( VLast - _VOpt ) < options.TOLITER * std::fabs( VLast + _VOpt ) / 2 ){
       if( options.DISPLEVEL )
         os << "** CONVERGENCE TOLERANCE SATISFIED" << std::endl;
       break;
     }
+    else if( _EOpt.empty() ){
+      if( options.DISPLEVEL )
+        os << "** EFFORT-BASED OPTIMIZATION FAILED" << std::endl;
+      break;    
+    }
 
-    gradient_solve( _EOpt, vcst, true, os );
+    flag = gradient_solve( _EOpt, vcst, true, os );
     VLast = _VOpt;
     if( ++it >= options.MAXITER ){
       if( options.DISPLEVEL )
@@ -1302,6 +1309,8 @@ EXPDES::combined_solve
       break;
     }
   }
+  
+  return flag;
 }
 
 inline
@@ -1413,7 +1422,7 @@ const
 }
 
 inline
-void
+int
 EXPDES::effort_solve
 ( size_t const NEXP, bool const exact, std::map<size_t,double> const& EIni,
   std::ostream& os )
@@ -1485,7 +1494,8 @@ EXPDES::effort_solve
   _SOpt.clear();
   _ROpt.clear();
   _VOpt = BASE_OPT::BASE_OPT::INF;
-  if( doe.get_status() == MINLP::SUCCESSFUL ){
+  if( doe.get_status() == MINLP::SUCCESSFUL 
+   || doe.get_status() == MINLP::INTERRUPTED ){
     size_t isupp = 0;
     for( auto const& Ek : doe.get_incumbent().x ){
       if( isupp >= NSUPP ){
@@ -1506,6 +1516,8 @@ EXPDES::effort_solve
 
   stats.walltime_slvmip += stats.lapse( t_slvmip );
   stats.walltime_all    += stats.lapse( t_slvmip );
+  
+  return doe.get_status();
 }
 
 inline
@@ -2137,7 +2149,7 @@ EXPDES::_refine_set_FIMAverse
 }
 
 inline
-void
+int
 EXPDES::gradient_solve
 ( std::map<size_t,double> const& EOpt, std::vector<double> const& vcst,
   bool const update, std::ostream& os )
@@ -2243,6 +2255,8 @@ EXPDES::gradient_solve
 
   stats.walltime_slvnlp += stats.lapse( t_slvnlp );
   stats.walltime_all    += stats.lapse( t_slvnlp );
+
+  return doeref.get_status();
 }
 
 inline

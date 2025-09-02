@@ -1,4 +1,4 @@
-#define MAGNUS__EXPDES_SETUP_DEBUG
+#undef  MAGNUS__EXPDES_SETUP_DEBUG
 #define MAGNUS__EXPDES_SHOW_APPORTION
 #define MC__FFFIMCRIT_CHECK
 #define MC__FFGRADFIMCRIT_CHECK
@@ -60,9 +60,10 @@ int main()
   mc::EXPDES DOE;
   DOE.options.CRITERION = mc::EXPDES::DOPT;//BRISK;//
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;//
+  DOE.options.FEASTHRES = 0.85;
   DOE.options.DISPLEVEL = 1;
   DOE.options.MINLPSLV.DISPLEVEL = 1;
-  DOE.options.MINLPSLV.MAXITER = 200;
+  DOE.options.MINLPSLV.MAXITER = 50;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 0;
   DOE.options.MINLPSLV.NLPSLV.OPTIMTOL  = 1e-8;
   DOE.options.MINLPSLV.NLPSLV.DISPLEVEL = 0;
@@ -107,9 +108,7 @@ int main()
   };
 */
   DOE.setup();
-  DOE.sample_support( 128 );
-  for( auto ui : DOE.control_sample() )
-    std::cout << arma::rowvec( ui.data(), ui.size(), false );
+  DOE.sample_support( 256 );
   //return 0;
   //DOE.gradient_solve( effort );
   //DOE.combined_solve( 8, false ); // continuous design
@@ -123,6 +122,10 @@ int main()
   //DOE.file_export( "test0" );
 
   auto campaign = DOE.campaign();
+
+  std::cout << "\n# Candidate supports:\n";
+  for( auto ui : DOE.control_sample() )
+    std::cout << arma::rowvec( ui.data(), ui.size(), false );
 
 /*
   std::list<std::pair<double,std::vector<double>>> campaign // ** EFFORT-BASED EXACT DESIGN: 2.58167e+01

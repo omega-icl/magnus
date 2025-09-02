@@ -181,7 +181,7 @@ BASE_SAMPLING::gaussian_sample
     
   for( size_t s=0; s<NSAM; ++s ){
     TSAM.push_back( std::vector<double>( mX.colptr(s), mX.colptr(s)+NDIM ) );
-    std::cout << arma::rowvec( mX.colptr(s), NDIM, false );
+//    std::cout << arma::rowvec( mX.colptr(s), NDIM, false );
   }
 }
 
