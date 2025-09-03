@@ -12,6 +12,7 @@ The present version 1.1 of MAGNUS comprises modules for:
 
 A range of python notebooks are provided in `src/interface` to illustrate these modules.
 
+---
 ### Setting up MAGNUS ###
 
 Refer to [INSTALL.md](./INSTALL.md) for instructions.
