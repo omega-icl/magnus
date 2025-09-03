@@ -1,19 +1,21 @@
 # THIRD-PARTY LIBRARIES <<-- CHANGE AS APPROPRIATE -->>
 
-PATH_MAGNUS    = $(shell cd $(HOME)/Programs/bitbucket/magnus; pwd)
-PATH_CANON     = $(shell cd $(HOME)/Programs/bitbucket/canon40; pwd)
+PATH_MAGNUS_MK := $(dir $(lastword $(MAKEFILE_LIST)))
+
+include $(abspath $(PATH_MAGNUS_MK)../../canon/src/makeoptions.mk)
+PATH_CANON = $(abspath $(PATH_MAGNUS_MK)../../canon)
+
+PATH_MAGNUS = $(abspath $(PATH_MAGNUS_MK)../)
 
 # COMPILATION <<-- CHANGE AS APPROPRIATE -->>
-
-include $(PATH_CANON)/src/makeoptions.mk
 
 PROF = #-pg
 OPTIM = -O2
 DEBUG = #-g
 WARN  = -Wall -Wno-misleading-indentation -Wno-unknown-pragmas -Wno-parentheses -Wno-unused-result
 CPP17 = -std=c++17
-CC    = gcc-13
-CPP   = g++-13
+CC    = gcc
+CPP   = g++
 # CPP   = icpc
 
 # <<-- NO CHANGE BEYOND THIS POINT -->>
