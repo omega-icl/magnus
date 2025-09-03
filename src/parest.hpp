@@ -3,7 +3,7 @@
 // This code is published under the Eclipse Public License.
 
 /*!
-\page page_PAREST Parameter Estimation in Parametric Models with MC++
+\page page_PAREST Parameter Estimation in Mathematical Models
 \author Benoit Chachuat <tt>(b.chachuat@imperial.ac.uk)</tt>
 \version 0.2
 \date 2025

@@ -1,29 +1,22 @@
-# README #
+# MAGNUS: Modeling, Analysis & desiGN of Uncertain Systems #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+MAGNUS provides a collection of classes to support the development and analysis of mathematical models. It is written in C++ to promote execution speed and includes Python binders through (pybind11)[https://pybind11.readthedocs.io/en/stable/].
 
-### What is this repository for? ###
+MAGNUS builds on (MC++)[https://github.com/omega-icl/mcpp] for expression tree manipulation, differentiation and evaluation, along with (CRONOS)[https://github.com/omega-icl/cronos] for numerical integration and sensitivity analysis of dynamic systems and (CANON)[https://github.com/omega-icl/canon] for local and global numerical optimization.
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+The present version 1.1 of MAGNUS comprises modules for:
+* Parameter estimation in mathematical models
+* Model-based feasibility analysis using nested sampling
+* Model-based design of experiments
 
-### How do I get set up? ###
+A range of python notebooks are provided in `src/interface` to illustrate these modules.
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+### Setting up MAGNUS ###
 
-### Contribution guidelines ###
+Refer to (INSTALL.md)[./INSTALL.md] for instructions.
 
-* Writing tests
-* Code review
-* Other guidelines
+### Contacts ###
 
-### Who do I talk to? ###
+* Repo owner: [Benoit C. Chachuat](https://profiles.imperial.ac.uk/b.chachuat)
+* OMEGA Research Group
 
-* Repo owner or admin
-* Other community or team contact
