@@ -5,6 +5,7 @@ MAGNUS provides a collection of classes to support the development and analysis 
 MAGNUS builds on [MC++](https://github.com/omega-icl/mcpp) for expression tree manipulation, differentiation and evaluation, along with [CRONOS](https://github.com/omega-icl/cronos) for numerical integration and sensitivity analysis of dynamic systems and [CANON](https://github.com/omega-icl/canon) for local and global numerical optimization.
 
 The present version 1.1 of MAGNUS comprises modules for:
+
 * Parameter estimation in mathematical models
 * Model-based feasibility analysis using nested sampling
 * Model-based design of experiments
