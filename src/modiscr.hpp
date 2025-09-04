@@ -315,7 +315,7 @@ public:
       () const
       { return std::chrono::system_clock::now(); }
     //! @brief Get current time lapse with respect to start time point
-    std::chrono::microseconds walltime
+    std::chrono::microseconds lapse
       ( std::chrono::time_point<std::chrono::system_clock> const& start ) const
       { return std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::system_clock::now() - start ); }    
     //! @brief Convert microsecond ticks to time
@@ -503,8 +503,8 @@ MODISCR::setup
     throw Exceptions( Exceptions::BADCRIT );
   }
 
-  stats.walltime_setup += stats.walltime( t_setup );
-  stats.walltime_all   += stats.walltime( t_setup );
+  stats.walltime_setup += stats.lapse( t_setup );
+  stats.walltime_all   += stats.lapse( t_setup );
   return true;
 }
 
@@ -582,8 +582,8 @@ MODISCR::sample_support
   if( options.DISPLEVEL )
     os << std::endl;
 
-  stats.walltime_samgen += stats.walltime( t_samgen );
-  stats.walltime_all    += stats.walltime( t_samgen );
+  stats.walltime_samgen += stats.lapse( t_samgen );
+  stats.walltime_all    += stats.lapse( t_samgen );
   return flag;
 }
 
@@ -621,7 +621,7 @@ MODISCR::_sample_out
   if( options.DISPLEVEL )
     os << "| " << NUNC*(_ne0+NSAM)
        << std::right << std::fixed << std::setprecision(2)
-       << std::setw(10) << stats.to_time( stats.walltime( tstart ) ) << " SEC" << std::flush;
+       << std::setw(10) << stats.to_time( stats.lapse( tstart ) ) << " SEC" << std::flush;
 
   return true;
 }
@@ -754,8 +754,8 @@ MODISCR::_update_supports
   if( options.DISPLEVEL > 1 )
     os << std::endl;
 
-  stats.walltime_samgen += stats.walltime( t_samgen );
-  stats.walltime_all    += stats.walltime( t_samgen );
+  stats.walltime_samgen += stats.lapse( t_samgen );
+  stats.walltime_all    += stats.lapse( t_samgen );
   return true;
 }
 
@@ -1341,8 +1341,8 @@ MODISCR::gradient_solve
   if( options.DISPLEVEL )
     _display_design( "GRADIENT-BASED REFINED DESIGN", _VOpt, EOpt, _SOpt, os ); 
 
-  stats.walltime_slvnlp += stats.walltime( t_slvnlp );
-  stats.walltime_all    += stats.walltime( t_slvnlp );
+  stats.walltime_slvnlp += stats.lapse( t_slvnlp );
+  stats.walltime_all    += stats.lapse( t_slvnlp );
 
   return doeref.get_status();
 }
