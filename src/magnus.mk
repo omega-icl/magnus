@@ -1,4 +1,4 @@
-# This makefile compiles a chared library of MAGNUS and it creates symbolic links
+# This makefile compiles a shared library of MAGNUS and it creates symbolic links
 # to the header files in $(incpath), binaries in $(binpath), and libraries in $(libpath)
 
 include $(srcpath)/makeoptions.mk
@@ -9,8 +9,8 @@ incobjs = base_sampling.hpp \
           fffeas.hpp base_mbfa.hpp nsfeas.hpp \
           ffest.hpp base_parest.hpp parest.hpp \
           ffdoe.hpp base_mbdoe.hpp expdes.hpp modiscr.hpp
-binobjs = 
-libobjs = 
+binobjs =
+libobjs =
 
 #binname = magnus
 #libname = libmagnus.so
@@ -19,12 +19,12 @@ libobjs =
 
 install: dispBuild magnus_inc magnus_bin magnus_lib dispInstall
 #	@if test ! -e $(binpath)/$(binname); then \
-#		echo creating symolic link to executable $(binname); \
-#		cd $(binpath) ; ln -s $(srcpath)/$(binname) $(binname); \
+#		echo creating symbolic link to executable $(binname); \
+#		cd $(binpath); ln -s $(srcpath)/$(binname) $(binname); \
 #	fi
 #	@if test ! -e $(libpath)/$(libname); then \
-#		echo creating symolic link to shared library $(libname); \
-#		cd $(libpath) ; ln -s $(srcpath)/$(libname) $(libname); \
+#		echo creating symbolic link to shared library $(libname); \
+#		cd $(libpath); ln -s $(srcpath)/$(libname) $(libname); \
 #	fi
 	@echo
 
@@ -42,10 +42,10 @@ magnus_inc:
 		fi; \
 	done
 
-%.o : %.cpp
+%.o: %.cpp
 	$(CPP) -c $(FLAG_CPP) $(FLAG_MAGNUS) $(INC_MAGNUS) $< -o $@
 
-%.o : %.c
+%.o: %.c
 	$(CPP) -c $(FLAG_CPP) $(FLAG_MAGNUS) $(INC_MAGNUS) $< -o $@
 
 dispBuild:
@@ -70,13 +70,13 @@ dispClean:
 
 #####
 
-cleandist: dispCleanInstall
-	rm -f $(libobjs) $(binname) $(libname)
-	-(cd $(incpath) ; rm -f $(incobjs))
-#	-(cd $(binpath) ; rm -f $(binname))
-#	-(cd $(libpath) ; rm -f $(libname))
-	
-dispCleanInstall:
+uninstall: dispUninstall
+	rm -f $(libobjs) $(binobjs) $(binname) $(libname)
+	-(cd $(incpath); rm -f $(incobjs))
+#	-(cd $(binpath); rm -f $(binname))
+#	-(cd $(libpath); rm -f $(libname))
+
+dispUninstall:
 	@echo
 	@(echo '***Uninstalling MAGNUS library (ver.' $(version)')***')
 	@echo
