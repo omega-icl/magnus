@@ -44,6 +44,9 @@ protected:
   //! @brief quasi-random number generator
   qrgen                                        _gen;
 
+  //! @brief quasi-random number generator
+  qrgen                                        _gen1d;
+
   //! @brief flag indicating if problem is setup before sampling
   bool                                         _is_setup;
 
@@ -85,6 +88,12 @@ protected:
 
   //! @brief centre vector of current nest
   arma::vec                                    _nestCentre;
+
+  //! @brief lower bound of current nest
+  arma::vec                                    _nestLB;
+
+  //! @brief upper bound of current nest
+  arma::vec                                    _nestUB;
 
   //! @brief shape matrix for current nest
   arma::mat                                    _nestShape;
@@ -132,6 +141,7 @@ public:
   NSFEAS
     ()
     : _gen       ( sobol64(1), boost::uniform_01<double>() ),
+      _gen1d     ( sobol64(1), boost::uniform_01<double>() ),
       _is_setup  ( false ),
       _dag       ( nullptr ),
       _liveNest  ( 0. ),
@@ -284,10 +294,9 @@ public:
       ( std::ostream&os=std::cout )
       { os << std::fixed << std::setprecision(2) << std::right
            << std::endl
-           << "** EVALUATIONS: " << std::right << std::setw(10) << numfct << " / "
-                                 << std::left  << std::setw(10) << numerr << " FAILED" << std::endl
-           << "** WALL TIME:   " << std::right << std::setw(10) << to_time( walltime ) << " SEC" << std::endl
-           << std::endl; }
+           << "** EVALUATIONS: " << std::right << std::setw(10) << numfct
+                                 << std::left  << " (" << numerr << " FAILED)" << std::endl
+           << "** WALL TIME:   " << std::right << std::setw(10) << to_time( walltime ) << " SEC" << std::endl; }
     //! @brief Current iteration
     size_t iter;
     //! @brief Total function evaluations
@@ -426,9 +435,12 @@ NSFEAS::setup
     return false;
   }
   
-  // Sobol sampler
+  // Sobol samplers
   sobol64 eng( _nu );
   _gen.engine() = eng;
+  
+  sobol64 eng1d( 1 );
+  _gen1d.engine() = eng1d;
 
   _is_setup = true;
   return true;
@@ -440,6 +452,10 @@ NSFEAS::_sample_ini
 ( size_t const nprop, std::chrono::time_point<std::chrono::system_clock> const& tstart,
   std::ostream& os )
 {
+  // Nest bounds
+  _nestLB = arma::vec( _vCONLB );
+  _nestUB = arma::vec( _vCONUB );
+
   // Sample nest
   size_t const NLIVE0 = _liveFEAS.size();
   for( size_t s=0; _liveFEAS.size() < NLIVE0 + nprop; ++s, ++stats.numfct ){ // to account for failures
@@ -472,8 +488,8 @@ NSFEAS::_sample_bounds
 {
   _vCONSAM.push_back( std::vector<double>( _nu ) );
   for( size_t i=0; i<_nu; i++ )
-    _vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * _gen();
-    //_vCONSAM.back()[i] = _vCONLB[i] + ( _vCONUB[i] - _vCONLB[i] ) * arma::randu();
+    _vCONSAM.back()[i] = _nestLB(i) + ( _nestUB(i) - _nestLB(i) ) * _gen();
+    //_vCONSAM.back()[i] = _nestLB(i) + ( _nestUB(i) - _nestLB(i) ) * arma::randu();
 }
 
 inline
@@ -485,31 +501,90 @@ NSFEAS::_update_nest
   // Gather data points
   _nestData.set_size( _nu, points.size() );
   size_t c=0;
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+  std::cout << "Live data points:\n" << std::right << std::scientific << std::setprecision(5);
+#endif
   for( auto const& [lkh,pcon] : points ){
     double* mem = _nestData.colptr( c++ );
-    for( size_t i=0; i<_nu; ++i ) mem[i] = std::get<0>(pcon)[i]; 
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << std::setw(12) << lkh << ":";
+#endif
+    for( size_t i=0; i<_nu; ++i ){
+      mem[i] = std::get<0>(pcon)[i]; 
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+      std::cout << std::setw(12) << mem[i];
+#endif
+    }
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << std::endl;
+#endif
   }
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << "Live data points:\n" << _nestData.t();
 #endif
 
+  // Nest bounds
+  _nestLB = arma::min( _nestData, 1 );
+  _nestUB = arma::max( _nestData, 1 );
+  arma::vec corr = (_nestUB - _nestLB) * (0.5*factor);
+  _nestLB -= corr;
+  _nestUB += corr;
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+  std::cout << std::right << std::scientific << std::setprecision(5);
+  for( size_t i=0; i<_nu; ++i ){
+    std::cout << std::setw(13) << _nestLB(i)
+              << std::setw(13) << _nestUB(i);
+  }
+  std::cout << std::endl;
+#endif
+  _nestLB = arma::max( _nestLB, arma::vec( _vCONLB.data(), _nu, false ) );
+  _nestUB = arma::min( _nestUB, arma::vec( _vCONUB.data(), _nu, false ) );
+
   // Nest centre
   _nestCentre = arma::mean( _nestData, 1 );
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-  std::cout << "Data centre:\n" << _nestCentre.t();
+  std::cout << "Data centre:" << _nestCentre.t();
 #endif
 
-  // Nest shape matrix
-  boost::math::chi_squared dist( _nu );
-  double const Chi2Crit = boost::math::quantile( dist, options.ELLCONF );
-#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-  std::cout << "Critical chi-squared " << _nu << " DoF, 99%: " << Chi2Crit << std::endl;
-#endif
+  // Nest shape
   arma::mat covData = arma::cov( _nestData.t(), 1 );
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << "Data covariance:\n" << covData;
 #endif
-  return arma::chol( _nestShape, covData *= Chi2Crit * (1+factor) );
+  if( !arma::chol( _nestShape, covData, "lower" ) ) return false;
+  _nestData.each_col() -= _nestCentre;
+
+  arma::vec covMag( _nestData.n_cols );
+  c=0;
+  _nestData.each_col(
+    [&]( arma::vec const& v )
+    { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covMag(c++) = arma::norm( x, 2 ); }
+  );
+
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+  std::cout << "Magnification:\n" << arma::max( covMag ) << std::endl; //covMag;
+#endif
+
+  _nestShape *= arma::max( covMag ) * (1+factor);
+
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+  std::cout << "   " << std::right << std::scientific << std::setprecision(5);
+  for( size_t i=0; i<_nu; ++i ){
+    std::cout << std::setw(13) << _nestCentre(i)-_nestShape(i,i)
+              << std::setw(13) << _nestCentre(i)+_nestShape(i,i);
+  }
+  std::cout << std::endl;
+
+  arma::vec covChk( _nestData.n_cols );
+  c=0;
+  _nestData.each_col(
+    [&]( arma::vec const& v )
+    { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covChk(c++) = arma::norm( x, 2 ); }
+  );
+  std::cout << "Check: " << arma::max( covChk ) << std::endl;
+#endif
+
+  return true;
 }
 
 inline
@@ -517,29 +592,53 @@ bool
 NSFEAS::_sample_nest
 ( bool const bndcheck, std::ostream& os )
 {
+  // Compare nest volume to box domain volume
+  double logvoldom = 0., logvolnest = 0.;
+  for( size_t i=0; i<_nu; ++i ){
+    if( _nestUB(i) - _nestLB(i) > DBL_EPSILON )
+      logvoldom += std::log( _nestUB(i) - _nestLB(i) );
+    else
+      logvoldom += std::log( DBL_EPSILON );
+    if( _nestShape(i,i) > DBL_EPSILON )
+      logvolnest += std::log( _nestShape(i,i) );
+    else
+      logvolnest += std::log( DBL_EPSILON );
+  }
+
+  // Sample domain instead of nest
+  if( logvoldom <= logvolnest ){
+    _sample_bounds( os );
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << "Sampling of _nu-dimensional box domain:\n";
+    std::cout << "Lower range: " << _nestLB.t();
+    std::cout << "Upper range: " << _nestUB.t();
+    std::cout << arma::rowvec( _vCONSAM.back().data(), _nu, false );
+#endif
+    return true;
+  }
+  
   // Generate point in _nu-dimensional unit hyperball
-  //thread_local static sobol64 eng( 1 );
-  //thread_local static qrgen gen( eng, boost::uniform_01<double>() );
-  //gen.engine().seed( 0 );
   //for( unsigned i=0; i<500; ++i ){
-    //arma::vec vRan = arma::normalise( arma::randn(_nu), 2 ) * std::pow( gen(), 1/(double)_nu );
+    //arma::vec vSAM = arma::normalise( arma::randn(_nu), 2 ) * std::pow( _gen1d(), 1/(double)_nu );
     arma::vec vSAM = arma::normalise( arma::randn(_nu), 2 ) * std::pow( arma::randu(), 1/(double)_nu );
-//#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-//    std::cout << "Sampling of _nu-dimensional unit hyperball:\n";
-//    std::cout << vSAM.t();
-//#endif
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << "Sampling of _nu-dimensional unit hyperball:\n";
+    std::cout << vSAM.t();
+#endif
   //}
 
-//#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-//  std::cout << "Nest Centre:\n" << _nestCentre.t();
-//  std::cout << "Nest Shape:\n" << _nestShape;
-//#endif
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+  std::cout << "Nest Centre:\n" << _nestCentre.t();
+  std::cout << "Nest Shape:\n" << _nestShape;
+  std::cout << "Nest Diameter:\n" << arma::diagvec(_nestShape).t();
+#endif
+  auto vBALL = vSAM;
   vSAM = _nestCentre + _nestShape * vSAM;
-  for( size_t i=0; i<_nu && bndcheck; ++i )
-    if( vSAM[i] < _vCONLB[i] || vSAM[i] > _vCONUB[i] ) return false;
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << vSAM.t();
 #endif
+  for( size_t i=0; i<_nu && bndcheck; ++i )
+    if( vSAM[i] < _vCONLB[i] || vSAM[i] > _vCONUB[i] ){ return false; }
 
   _vCONSAM.push_back( std::vector<double>( vSAM.memptr(), vSAM.memptr()+_nu ) );
   return true;
@@ -600,30 +699,33 @@ NSFEAS::_sample_feas
               << std::setw(7+15+6+9+15) << std::setfill('-') << "-"
               << std::setfill(' ')
               << std::endl;
-    std::cout << std::setw(7) << 0
-              << std::scientific << std::setprecision(4) << std::setw(15) << _liveFEAS.rbegin()->first
-              << std::setw(6) << stats.numfeas
-              << std::setw(9) << _deadFEAS.size()
-              << std::scientific << std::setprecision(4) << std::setw(15) << factor
-              << std::endl;
     }
 
   // Iteration for feasibility phase
   int flag = _terminate( 0, true, tstart, os );
   for( stats.iter=0; !flag; ++stats.iter ){
 
-    if( stats.iter && options.DISPLEVEL && (!options.DISPITER || !(stats.iter % options.DISPITER)) ){
+    // Update ellipsoidal nest
+    if( !_update_nest( _liveFEAS, factor, os ) )
+      return( 3 );
+
+    if( options.DISPLEVEL && (!options.DISPITER || !(stats.iter % options.DISPITER)) ){
       std::cout << std::setw(7) << stats.iter
                 << std::scientific << std::setprecision(4) << std::setw(15) << _liveFEAS.rbegin()->first
                 << std::setw(6) << stats.numfeas
                 << std::setw(9) << _deadFEAS.size()
-                << std::scientific << std::setprecision(4) << std::setw(15) << factor
-                << std::endl;
+                << std::scientific << std::setprecision(4) << std::setw(15) << factor;
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+      std::cout << std::right << std::scientific << std::setprecision(5);
+      for( size_t i=0; i<_nu; ++i ){
+        std::cout << std::setw(12) << _nestCentre(i)-_nestShape(i,i)
+                  << std::setw(12) << _nestCentre(i)+_nestShape(i,i)
+                  << std::setw(12) << _nestLB(i)
+                  << std::setw(12) << _nestUB(i);
+      }
+#endif
+      std::cout << std::endl;
     }
-
-    // Update ellipsoidal nest
-    if( !_update_nest( _liveFEAS, factor, os ) )
-      return( 3 );
 
     size_t const NSAM0 = _vCONSAM.size();
     for( size_t s=0; !flag && _vCONSAM.size() < NSAM0 + options.NUMPROP; ++s ){
@@ -641,6 +743,11 @@ NSFEAS::_sample_feas
         ++stats.numerr;
         continue;
       }
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+      std::cout << (_dVAL[options.FEASCRIT] <= _liveFEAS.rbegin()->first)
+                << std::right << std::scientific << std::setprecision(5) << std::setw(12) << _dVAL[options.FEASCRIT]
+                << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
 
       // Check for improvement for insertion
       if( _dVAL[options.FEASCRIT] > _liveFEAS.rbegin()->first ){
@@ -747,7 +854,7 @@ NSFEAS::_sample_lkh
 #endif
 
       // Update live set, dead set, and probability mass
-      _deadLKH.insert( *_liveLKH.begin() );
+      auto itdead = _deadLKH.insert( *_liveLKH.begin() );
       _liveLKH.insert( { _dVAL[2+(int)options.LKHCRIT], { dCON.data(), _dVAL[0], _dVAL[options.FEASCRIT] } } );
       _liveLKH.erase( _liveLKH.begin() );
       double nestMass = std::exp( -(double)_deadLKH.size() / (double)options.NUMLIVE );
@@ -765,6 +872,7 @@ NSFEAS::_sample_lkh
       int dum; std::cout << "ENTER 1 TO CONTINUE\n"; std::cin >> dum;
 #endif
       _nestMass  = nestMass;
+      std::get<2>( itdead->second ) = _deadShell;
 
       // Update ellipsoid magnification factor
       factor = options.ELLMAG * std::pow( _nestMass, options.ELLRED );   
@@ -787,8 +895,13 @@ NSFEAS::_sample_lkh
               << std::endl;
   }
 
-  // Update probability mass
+  // Update probability mass and weights
   _totalMass = log_sum_exp( _totalMass, _liveNest );
+  for( auto& [lkh,tup] : _liveLKH )
+    std::get<2>( tup ) = _liveNest - std::log( options.NUMLIVE ) - _totalMass;
+  for( auto& [lkh,tup] : _deadLKH )
+    std::get<2>( tup ) -= _totalMass;
+
   if( options.DISPLEVEL )
     std::cout << std::setw(9+13) << std::setfill('-') << "-"
               << std::setfill(' ')
@@ -840,10 +953,11 @@ NSFEAS::sample
 
     // Reset Sobol sampler
     _gen.engine().seed( 0 );
+    _gen1d.engine().seed( 0 );
 
     // Evaluate feasibility/likelihood criteria for every live point
     if( options.DISPLEVEL )
-      os << "** INITIALIZING LIVE POINTS " << std::flush;
+      os << "\n** INITIALIZING LIVE POINTS " << std::flush;
 
     flag = _sample_ini( options.NUMLIVE, tstart, os );
 

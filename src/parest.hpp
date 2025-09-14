@@ -57,6 +57,7 @@ using boost::math::cdf;
 #endif
 
 #include "base_parest.hpp"
+#include "nsfeas.hpp"
 
 #include "fflin.hpp"
 #include "ffode.hpp"
@@ -115,11 +116,14 @@ private:
   //! @brief output values
   std::vector<double> _dOUT;
 
-  //! @brief Structure holding NLP intermediate solution
-  SOLUTION_OPT _MLEOpt;
+  //! @brief Structure holding estimated parameters
+  SOLUTION_OPT _PAREst;
 
-  //! @brief Sampled confidence current MLE criterion
-  arma::mat _CRSam;
+  //! @brief Sample parameters
+  arma::mat _PARSam;
+
+  //! @brief Sample weights
+  arma::vec _WEISam;
   
   //! @brief current MLE criterion
   FFVar _MLECrit;
@@ -131,8 +135,8 @@ public:
    
   //! @brief Constructor
   PAREST()
-    : _dag(nullptr),
-      _MLECrit(0.)
+    : _dag     ( nullptr ),
+      _MLECrit ( 0. )
     { stats.reset(); }
 
   //! @brief Destructor
@@ -146,13 +150,15 @@ public:
   {
     //! @brief Constructor
     Options()
-      : NLPSLV()
+      : NLPSLV(),
+        NSSLV()
       { reset(); }
 
     //! @brief Reset to default options
     void reset
       ()
       {
+        NLPSLV.reset();
 #ifdef MC__USE_SNOPT
         NLPSLV.DISPLEVEL            = 0;
         NLPSLV.MAXITER              = 500;
@@ -171,6 +177,8 @@ public:
         NLPSLV.GRADCHECK            = 0;
         NLPSLV.MAXTHREAD            = 0;
 #endif
+        NSSLV.reset();
+        NSSLV.DISPLEVEL             = 0;
         DISPLEVEL                   = 1;
         RNGSEED                     = -1;
       }
@@ -179,15 +187,18 @@ public:
         DISPLEVEL   = options.DISPLEVEL;
         RNGSEED     = options.RNGSEED;
         NLPSLV      = options.NLPSLV;
+        NSSLV       = options.NSSLV;
         return *this;
       }
 
     //! @brief Verbosity level
-    int                      DISPLEVEL;
-    //! @brief Random-number generator seed. >=0: seed set to specified value; <0: seed set to a value drawn from std::random_device
-    int                      RNGSEED;
+    int                       DISPLEVEL;
+    //! @brief Random-number generator seed. =0: Sobol sampling; >0: seed set to specified value; <0: seed set to a value drawn from std::random_device
+    int                       RNGSEED;
     //! @brief NLP gradient-based solver options
-    typename NLP::Options    NLPSLV;
+    typename NLP::Options     NLPSLV;
+    //! @brief Nested sampling solver options
+    NSFEAS::Options  NSSLV;
   } options;
 
   //! @brief PAREST solver exceptions
@@ -233,7 +244,7 @@ public:
   struct Stats{
     //! @brief Reset statistics
     void reset()
-      { walltime_all = walltime_setup = walltime_slvmle =
+      { walltime_all = walltime_setup = walltime_slvmle = walltime_slvns =
         std::chrono::microseconds(0); }
     //! @brief Display statistics
     void display
@@ -241,9 +252,10 @@ public:
       { os << std::fixed << std::setprecision(2) << std::right
            << std::endl
            << "#  WALL-CLOCK TIMES" << std::endl
-           << "#  SOLVER SETUP:         " << std::setw(10) << to_time( walltime_setup )   << " SEC" << std::endl
-           << "#  GRADIENT-BASED SOLVE: " << std::setw(10) << to_time( walltime_slvmle )  << " SEC" << std::endl
-           << "#  TOTAL:                " << std::setw(10) << to_time( walltime_all )     << " SEC" << std::endl
+           << "#  SOLVER SETUP:          " << std::setw(10) << to_time( walltime_setup )   << " SEC" << std::endl
+           << "#  GRADIENT-BASED SOLVE:  " << std::setw(10) << to_time( walltime_slvmle )  << " SEC" << std::endl
+           << "#  NESTED SAMPLING SOLVE: " << std::setw(10) << to_time( walltime_slvns )   << " SEC" << std::endl
+           << "#  TOTAL:                 " << std::setw(10) << to_time( walltime_all )     << " SEC" << std::endl
            << std::endl; }
     //! @brief Total wall-clock time (in microseconds)
     std::chrono::microseconds walltime_all;
@@ -251,12 +263,14 @@ public:
     std::chrono::microseconds walltime_setup;
     //! @brief Cumulated wall-clock time used by gradient-based NLP solver (in microseconds)
     std::chrono::microseconds walltime_slvmle;
+    //! @brief Cumulated wall-clock time used by nested sampling solver (in microseconds)
+    std::chrono::microseconds walltime_slvns;
     //! @brief Get current time point
     std::chrono::time_point<std::chrono::system_clock> start
       () const
       { return std::chrono::system_clock::now(); }
     //! @brief Get current time lapse with respect to start time point
-    std::chrono::microseconds walltime
+    std::chrono::microseconds lapse
       ( std::chrono::time_point<std::chrono::system_clock> const& start ) const
       { return std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::system_clock::now() - start ); }    
     //! @brief Convert microsecond ticks to time
@@ -268,6 +282,16 @@ public:
   //! @brief Setup estimation problem before solution
   bool setup
     ();
+
+  //! @brief Solve set-membership estimation problem 
+  int sme_solve
+    ( double const& conf=0.95, std::vector<double> const& C0=std::vector<double>(),
+      std::ostream& os=std::cout );
+
+  //! @brief Solve Bayesian parameter estimation problem 
+  int bpe_solve
+    ( std::vector<double> const& C0=std::vector<double>(),
+      std::ostream& os=std::cout );
 
   //! @brief Solve gradient-based parameter estimation problem 
   int mle_solve
@@ -288,19 +312,29 @@ public:
     ( double const& conf, std::vector<double> const& P0,
       std::vector<double> const& C0=std::vector<double>(), std::ostream& os=std::cout );
 
-  //! @brief Compute covariance matrix using bootstrapping around given data set
-  arma::mat cov_bootstrap
+  //! @brief Sample confidence region using bootstrapping around given data set
+  void bootstrap_sample
     ( std::vector<std::vector<Experiment>> const& data, size_t const nsam,
       std::ostream& os=std::cout );
 
-  //! @brief Compute covariance matrix using bootstrapping around given data set
-  arma::mat cov_bootstrap
+  //! @brief Sample confidence region using bootstrapping around given data set
+  void bootstrap_sample
     ( std::vector<Experiment> const& data, size_t const nsam,
       std::ostream& os=std::cout );
 
-  //! @brief Compute covariance matrix using bootstrapping around maximum likelihood fit
-  arma::mat cov_bootstrap
+  //! @brief Sample confidence region using bootstrapping around best parameter estimates
+  void bootstrap_sample
     ( size_t const nsam, std::ostream& os=std::cout );
+
+  //! @brief Return covariance from sampled parameter posterior
+  arma::mat cov_sample
+    ( std::ostream& os=std::cout )
+    const;
+
+  //! @brief Return covariance for given parameter sample
+  arma::mat cov_sample
+    ( arma::mat PARSam, std::ostream& os=std::cout )
+    const;
 
   //! @brief Compute covariance matrix using linearization (Wald)
   arma::mat cov_linearized
@@ -316,17 +350,81 @@ public:
     ( arma::mat const& covmat, size_t const i, size_t const j, double const& conflevel=0.95,
       std::string const& type="F", size_t const nsam=50, std::ostream& os=std::cout );
 
-  //! @brief MLE solution
-  SOLUTION_OPT const& mle
-    ()
-    const
-    { return _MLEOpt; }
+  //! @brief Return weighted samples in level*100% HPD region
+  std::pair<arma::mat,arma::vec> hpd_region
+    ( double const& level=0.95, std::ostream& os=std::cout )
+    const;
 
-  //! @brief Sampled confidence region
-  arma::mat const& crsam
+  //! @brief Return lower and upper range of level*100% HPD intervals
+  std::pair<arma::vec,arma::vec> hpd_interval
+    ( double const& level=0.95, std::ostream& os=std::cout )
+    const;
+
+  //! @brief Return level*100% quantile of parameter posterior
+  arma::vec hpd_quantile
+    ( double const& level, std::ostream& os=std::cout )
+    const;
+
+  //! @brief Return min range of level*100% HPD region
+  arma::vec hpd_min
+    ( double const& level, std::ostream& os=std::cout )
+    const;
+
+  //! @brief Return max range of level*100% HPD region
+  arma::vec hpd_max
+    ( double const& level, std::ostream& os=std::cout )
+    const;
+
+  //! @brief Return mean of parameter posterior
+  arma::vec hpd_mean
+    ( std::ostream& os=std::cout )
+    const;
+
+  //! @brief Best parameter estimates
+  std::vector<double> const& par_best
     ()
     const
-    { return _CRSam; }
+    { return _PAREst.x; }
+
+  //! @brief Set of parameter samples
+  arma::mat const& par_sample
+    ()
+    const
+    { return _PARSam; }
+
+  //! @brief Set of weight samples
+  arma::vec const& wei_sample
+    ()
+    const
+    { return _WEISam; }
+
+private:
+
+  //! @brief Compute chi-squared (good-of-fit) test
+  std::tuple<double,double,double> _chi2_test
+    ( double const& conf, std::vector<double> const& P0, std::vector<double> const& C0,
+      int const disp, std::ostream& os );
+
+  //! @brief Return position of last weighted samples in HPD region at confidence level conf*100%
+  size_t _pos
+    ( double const& level, arma::vec const& wei )
+    const;
+
+  //! @brief Return mean of weighted samples in log space
+  double _mean
+    ( arma::vec const& par, arma::vec const& wei )
+    const;
+
+  //! @brief Return quantile at confidence level conf*100% in 1d weighted sample
+  double _quantile
+    ( double const& level, arma::vec const& val, arma::vec const& wei )
+    const;
+
+  //! @brief Return conf*100% quantile of parameter posterior
+  arma::vec _hpd_quantile
+    ( double const& level )
+    const;
+
 };
 
 inline
@@ -389,9 +487,453 @@ PAREST::setup
   else
     arma::arma_rng::set_seed( options.RNGSEED ); 
 
-  stats.walltime_setup += stats.walltime( t_setup );
-  stats.walltime_all   += stats.walltime( t_setup );
+  stats.walltime_setup += stats.lapse( t_setup );
+  stats.walltime_all   += stats.lapse( t_setup );
   return true;
+}
+
+inline
+int
+PAREST::sme_solve
+( double const& conf, std::vector<double> const& C0, std::ostream& os )
+{
+  _WEISam.reset();
+  _PARSam.reset();
+  _PAREst.reset();
+  
+  if( !_nd  )          throw Exceptions( Exceptions::NODATA );
+  if( !_vOUT.size()  ) throw Exceptions( Exceptions::NOMODEL );
+
+  auto&& t_slvns = stats.start();
+
+  // Update constants
+  if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
+  // Nested sampling
+  NSFEAS PE;
+
+  PE.options = options.NSSLV;
+  PE.set_dag( _dag );
+  PE.set_control( _vPAR, _vPARLB, _vPARUB );
+  PE.set_constant( _vCST, _vCSTVAL );
+
+  // Adequacy constraint
+  FFMLE OpMLE;
+  _MLECrit = 0.;
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_vCSTVAL, &_vDAT[m] );
+  }
+  chi_squared dist( _nd-_np );
+  double Chi2Crit = quantile( dist, conf );
+  FFLin<I> OpSum;
+  if( _nr ) PE.add_constraint( 2*_MLECrit + OpSum( _vREG, 1. ), LE, Chi2Crit );
+  else      PE.add_constraint( 2*_MLECrit, LE, Chi2Crit );
+
+  // Other constraints
+  for( size_t g=0; g<_ng; ++g )
+    PE.add_constraint( std::get<0>(_vCTR).at(g), std::get<1>(_vCTR).at(g), std::get<2>(_vCTR).at(g) );
+
+  PE.setup();
+  int iflag = PE.sample();
+
+  if( options.NSSLV.DISPLEVEL )
+    PE.stats.display();
+
+  if( iflag == PE.NORMAL ){
+    double const* pPAROPT = std::get<0>(PE.live_points().cbegin()->second);    
+    _PAREst.x.assign( pPAROPT, pPAROPT+_np );
+    _PAREst.f = { std::get<1>(_chi2_test( conf, _PAREst.x, C0, 0, os )) };
+    if( options.DISPLEVEL ){
+      os << "\n# MAXIMUM ADEQUACY:\n"
+         << "STATUS: " << iflag << std::endl
+         << std::scientific << std::setprecision(6) << std::right;
+      for( unsigned int i=0; i<_np; i++ )
+        os << "P[" << i << "]: " << std::setw(13) << _PAREst.x[i] << std::endl;
+      os << "GOODNESS-OF-FIT: " << std::fixed << std::setprecision(0) << _PAREst.f[0]*1e2 << "% CONFIDENCE LEVEL"  << std::setw(13) << std::endl;
+    }
+
+    if( options.DISPLEVEL )
+      os << "\n# SAMPLED ADEQUACY REGION:\n";
+
+    size_t isam = 0;
+    _PARSam.set_size( PE.live_points().size(), _np );
+    for( auto it = PE.live_points().cbegin(); it != PE.live_points().cend(); ++it, ++isam ){
+      auto const& [feas,tup] = *it;
+      _PARSam.row(isam) = arma::mat( const_cast<double*>(std::get<0>(tup)), 1, _np, false );
+      if( options.DISPLEVEL > 1 ){
+        os << std::setw(5) << std::right << isam << ": "
+           << std::scientific << std::setprecision(6) << std::setw(14) << feas << " | ";
+        auto vecx = arma::vec( const_cast<double*>(std::get<0>(tup)), _np, false );
+        vecx.t().raw_print( os );
+      }
+    }
+    
+    if( options.DISPLEVEL == 1 ){
+      os << std::scientific << std::setprecision(5);
+      for( size_t r=0; r<_PARSam.n_rows; ++r ){
+        os << std::setw(5) << std::right << r << ": ";
+        arma::rowvec&& par = _PARSam.row(r);
+        par.raw_print( os );
+        if( r == 2 ){
+          os << "   ..." << std::endl;
+          r += _PARSam.n_rows - 6;
+        }
+      }
+    }
+  }
+
+  stats.walltime_slvns += stats.lapse( t_slvns );
+  stats.walltime_all   += stats.lapse( t_slvns );
+
+  return iflag;
+}
+
+inline
+int
+PAREST::bpe_solve
+( std::vector<double> const& C0, std::ostream& os )
+{
+  _WEISam.reset();
+  _PARSam.reset();
+  _PAREst.reset();
+  
+  if( !_nd  )          throw Exceptions( Exceptions::NODATA );
+  if( !_vOUT.size()  ) throw Exceptions( Exceptions::NOMODEL );
+
+  auto&& t_slvns = stats.start();
+
+  // Update constants
+  if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
+  if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
+
+  // Nested sampling
+  NSFEAS PE;
+
+  PE.options = options.NSSLV;
+  PE.set_dag( _dag );
+  PE.set_control( _vPAR, _vPARLB, _vPARUB );
+  PE.set_constant( _vCST, _vCSTVAL );
+
+  // Constraints
+  for( size_t g=0; g<_ng; ++g )
+    PE.add_constraint( std::get<0>(_vCTR).at(g), std::get<1>(_vCTR).at(g), std::get<2>(_vCTR).at(g) );
+
+  // Log-likelihood function
+  FFMLE OpMLE;
+  _MLECrit = 0.;
+  for( size_t m=0; m<_nm; ++m ){
+    if( !_ny[m] ) continue;
+    _MLECrit -= OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_vCSTVAL, &_vDAT[m] );
+  }
+  FFLin<I> OpSum;
+  if( _nr ) PE.set_loglikelihood( _MLECrit - OpSum( _vREG, 1. ) );
+  else      PE.set_loglikelihood( _MLECrit );
+
+  PE.setup();
+  int iflag = PE.sample();
+
+  if( options.NSSLV.DISPLEVEL )
+    PE.stats.display();
+
+  if( iflag == PE.NORMAL ){
+    double const* pPAROPT = std::get<0>(PE.live_points().crbegin()->second);    
+    _PAREst.x.assign( pPAROPT, pPAROPT+_np );
+    _PAREst.f = { -PE.live_points().crbegin()->first };
+    if( options.DISPLEVEL ){
+      os << "\n# MAXIMUM A POSTERIORI:\n"
+         << "STATUS: " << iflag << std::endl
+         << std::scientific << std::setprecision(6) << std::right;
+      for( unsigned int i=0; i<_np; i++ )
+        os << "P[" << i << "]: " << std::setw(13) << _PAREst.x[i] << std::endl;
+      os << "LIKELIHOOD: " << std::setw(13) << _PAREst.f[0] << std::endl;
+    }
+
+    if( options.DISPLEVEL > 1 )
+      os << "\n# SAMPLED POSTERIOR:\n";
+    size_t isam = 0;
+    _PARSam.set_size( PE.live_points().size() + PE.dead_points().size(), _np );
+    _WEISam.set_size( PE.live_points().size() + PE.dead_points().size() );
+    double WEItot = 0.;
+    for( auto it = PE.live_points().crbegin(); it != PE.live_points().crend(); ++it, ++isam ){
+      auto const& [lkh,tup] = *it;
+      _PARSam.row(isam) = arma::mat( const_cast<double*>(std::get<0>(tup)), 1, _np, false );
+      _WEISam(isam) = std::get<2>(tup);
+      WEItot = (it != PE.live_points().crbegin()? log_sum_exp( WEItot, std::get<2>(tup) ): std::get<2>(tup) ); 
+      if( options.DISPLEVEL > 1 ){
+        os << std::setw(5) << std::right << isam << ": "
+           << std::scientific << std::setprecision(6) << std::setw(14) << lkh << " | "
+           << std::setw(14) << std::get<2>(tup) << " | " << std::setw(14) << WEItot << " | ";
+        auto vecx = arma::vec( const_cast<double*>(std::get<0>(tup)), _np, false );
+        vecx.t().raw_print( os );
+      }
+    }
+    for( auto it = PE.dead_points().crbegin(); it != PE.dead_points().crend(); ++it, ++isam ){
+      auto const& [lkh,tup] = *it;
+      _PARSam.row(isam) = arma::mat( const_cast<double*>(std::get<0>(tup)), 1, _np, false );
+      _WEISam(isam) = std::get<2>(tup);
+      WEItot = log_sum_exp( WEItot, std::get<2>(tup) ); 
+      if( options.DISPLEVEL > 1 ){
+        os << std::setw(5) << std::right << isam << ": "
+           << std::scientific << std::setprecision(6) << std::setw(14) << lkh << " | "
+           << std::setw(14) << std::get<2>(tup) << " | " << std::setw(14) << WEItot << " | ";
+        auto vecx = arma::vec( const_cast<double*>(std::get<0>(tup)), _np, false );
+        vecx.t().raw_print( os );
+      }
+    }
+  }
+
+  stats.walltime_slvns += stats.lapse( t_slvns );
+  stats.walltime_all   += stats.lapse( t_slvns );
+
+  return iflag;
+}
+
+inline
+size_t
+PAREST::_pos
+( double const& level, arma::vec const& wei )
+const
+{
+  // compute cumulated probability mass wei up to level
+  if( !wei.n_rows ) return 0;
+
+  size_t pos  = 0;
+  double mass = wei( pos );
+  for( ; mass < std::log( level ); ){
+    ++pos;
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+    std::cout << "pos: " << pos << "  mass: " << mass << "  threshold: " <<  std::log(level) << std::endl;
+#endif
+    if( pos == wei.n_rows ) break;
+    mass = log_sum_exp( mass, wei( pos ) );
+  }
+
+  return pos;
+}
+
+inline
+std::pair<arma::mat,arma::vec>
+PAREST::hpd_region
+( double const& level, std::ostream& os )
+const
+{
+  // compute cumulated probability mass _WEISam up to level
+  arma::mat PARHpd;
+  arma::vec WEIHpd;
+  if( _WEISam.empty() ){
+    size_t pos = std::round( _PARSam.n_rows * level );
+    PARHpd = _PARSam.submat( 0,0, pos,_np-1 );
+    WEIHpd.resize( pos+1 ).fill( -std::log(pos+1) );
+  }
+  else{
+    size_t pos = _pos( level, _WEISam );
+    PARHpd = _PARSam.submat( 0,0, pos,_np-1 );
+    WEIHpd = _WEISam.rows( 0, pos );
+  }
+  
+  if( options.DISPLEVEL ){
+    os << std::endl << "# " << std::fixed << std::setprecision(0) << level*1e2
+       << "% HPD PARAMETER REGION:\n"
+       << std::scientific << std::setprecision(5);
+    for( size_t r=0; r<PARHpd.n_rows; ++r ){
+      os << std::setw(5) << std::right << r << ": ";
+      os << std::setw(12) << WEIHpd(r) << " | ";
+      arma::rowvec&& par = PARHpd.row(r);
+      par.raw_print( os );
+      if( r == 2 ){
+        os << "   ..." << std::endl;
+        r += PARHpd.n_rows - 6;
+      }
+    }
+  }
+
+  return std::make_pair( PARHpd, WEIHpd );
+}
+
+inline
+arma::vec
+PAREST::hpd_min
+( double const& level, std::ostream& os )
+const
+{
+  // compute cumulated probability mass _WEISam up to level
+  if( _WEISam.empty() ) return arma::vec();
+  size_t pos = _pos( level, _WEISam );
+
+  // extract corresponding top part of _PARSam and determine minimum
+  auto&& PARMin = arma::min(_PARSam.submat( 0,0, pos,_np-1 ),0);
+
+  if( options.DISPLEVEL ){
+    os << std::endl << "# MINIMUM RANGE OF " << std::fixed << std::setprecision(0) << level*1e2
+       << "% HPD PARAMETER REGION:\n"
+       << std::scientific << std::setprecision(5);
+    PARMin.raw_print( os );
+  }
+
+  return PARMin.t();
+}
+
+inline
+arma::vec
+PAREST::hpd_max
+( double const& level, std::ostream& os )
+const
+{
+  // compute cumulated probability mass _WEISam up to level
+  if( _WEISam.empty() ) return arma::vec();
+  size_t pos = _pos( level, _WEISam );
+
+  // extract corresponding top part of _PARSam and determine maximum
+  auto&& PARMax = arma::max(_PARSam.submat( 0,0, pos,_np-1 ),0);
+
+  if( options.DISPLEVEL ){
+    os << std::endl << "# MAXIMUM RANGE OF " << std::fixed << std::setprecision(0) << level*1e2
+       << "% HPD PARAMETER REGION:\n"
+       << std::scientific << std::setprecision(5);
+    PARMax.raw_print( os );
+  }
+
+  return PARMax.t();
+}
+
+inline
+double
+PAREST::_quantile
+( double const& level, arma::vec const& val, arma::vec const& wei )
+const
+{
+  assert( !wei.n_rows || val.n_rows == wei.n_rows );
+  
+  // create map { val: wei }
+  std::multimap<double,double> map;
+  for( size_t i=0; i<val.n_rows; ++i )
+    map.insert({ val(i), wei.n_rows? wei(i): -std::log(val.n_rows) });
+
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+  std::cout << std::endl << std::scientific << std::setprecision(5) << std::right;
+  double m = 1.;
+  bool first = true;
+  for( auto const& [v,w] : map ){
+    m = (first? w: log_sum_exp( m, w ));
+    first = false;
+    std::cout << std::setw(13) << v << std::setw(13) << m << std::endl;
+  }
+#endif
+
+  // locate desired quantile
+  double mass = map.cbegin()->second;
+  for( auto it = map.cbegin(); ; ){
+    if( mass >= std::log( level ) ) return it->first;
+    ++it;
+    if( it == map.cend() ) break;
+    mass = log_sum_exp( mass, it->second );
+  }
+  return map.crend()->first;
+}
+
+inline
+arma::vec
+PAREST::_hpd_quantile
+( double const& level )
+const
+{
+  if( _PARSam.empty() ) return arma::vec();
+  assert( _PARSam.n_cols == _np );
+  
+  arma::vec PARQuan( _np );
+  size_t p=0;
+  _PARSam.each_col(
+    [&]( arma::vec const& v )
+    { PARQuan(p++) = _quantile( level, v, _WEISam ); }
+  );
+
+  return PARQuan;
+}
+
+inline
+arma::vec
+PAREST::hpd_quantile
+( double const& level, std::ostream& os )
+const
+{ 
+  auto&& PARQuan = _hpd_quantile( level );
+
+  if( options.DISPLEVEL ){
+    os << std::endl << "# " << std::fixed << std::setprecision(1) << level*1e2
+       << "% QUANTILE OF PARAMETER POSTERIOR:\n"
+       << std::scientific << std::setprecision(5);
+    PARQuan.t().raw_print( os );
+  }
+
+  return PARQuan;
+}
+
+inline
+arma::vec
+PAREST::hpd_mean
+( std::ostream& os )
+const
+{
+  if( _PARSam.empty() ) return arma::vec();
+  assert( _PARSam.n_cols == _np );
+
+  arma::vec PARMean( _np );
+  size_t p=0;
+  _PARSam.each_col(
+    [&]( arma::vec const& par )
+    { PARMean(p++) = _mean( par, _WEISam ); }
+  );
+  
+  if( options.DISPLEVEL ){
+    os << std::endl << "# MEAN OF PARAMETER POSTERIOR:\n"
+       << std::scientific << std::setprecision(5);
+    PARMean.t().raw_print( os );
+  }
+
+  return PARMean;
+}
+
+inline
+double
+PAREST::_mean
+( arma::vec const& par, arma::vec const& wei )
+const
+{
+  assert( !wei.n_rows || wei.n_rows == par.n_rows );
+
+  // compute mean in log space
+  ;
+  double mean = ( wei.n_rows? wei( 0 ) + std::log( par( 0 ) ): std::log( par( 0 ) / par.n_rows ) );
+  for( size_t pos = 0; ; ){
+    ++pos;
+    if( pos == par.n_rows ) break;
+    if( wei.n_rows ) mean = log_sum_exp( mean, wei( pos ) + std::log( par( pos ) ) );
+    else             mean = log_sum_exp( mean, std::log( par( pos ) / par.n_rows ) );
+  }
+
+  return std::exp( mean );
+}
+
+inline
+std::pair<arma::vec,arma::vec>
+PAREST::hpd_interval
+( double const& level, std::ostream& os )
+const
+{
+  auto&& PARLb = _hpd_quantile( 0.5*(1-level) );
+  auto&& PARUb = _hpd_quantile( 1-0.5*(1-level) );
+
+  if( options.DISPLEVEL ){
+    os << std::endl << "# " << std::fixed << std::setprecision(0) << level*1e2
+       << "% HPD PARAMETER INTERVALS:\n"
+       << std::scientific << std::setprecision(5);
+    PARLb.t().raw_print( os );
+    PARUb.t().raw_print( os );
+  }
+
+  return std::make_pair( PARLb, PARUb );
 }
 
 inline
@@ -399,6 +941,8 @@ int
 PAREST::mle_solve
 ( std::vector<double> const& P0, std::vector<double> const& C0, std::ostream& os )
 {
+  _PAREst.reset();
+
   if( !_nd  )          throw Exceptions( Exceptions::NODATA );
   if( !_vOUT.size()  ) throw Exceptions( Exceptions::NOMODEL );
 
@@ -435,17 +979,21 @@ PAREST::mle_solve
   int iflag = PE.solve( P0.data(), nullptr, nullptr, _vCSTVAL.data() );
 
   if( options.DISPLEVEL > 1 )
-    os << "#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
-       << "#  STATIONARY: " << PE.is_stationary( 1e-6 ) << std::endl
-       << std::endl;
+    os << "\n#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
+       << "#  STATIONARY: " << PE.is_stationary( 1e-6 ) << std::endl;
 
-  if( options.DISPLEVEL )
-    os << "# PARAMETER ESTIMATION SOLUTION:\n" << PE.solution();
+  _PAREst = PE.solution();
+  if( options.DISPLEVEL ){
+    os << "\n# MAXIMUM LIKELIHOOD ESTIMATE:\n"
+       << "STATUS: " << iflag << std::endl
+       << std::scientific << std::setprecision(6) << std::right;
+    for( unsigned int i=0; i<_np; i++ )
+      os << "P[" << i << "]: " << std::setw(13) << _PAREst.x[i] << std::endl;
+    os << "LIKELIHOOD: " << std::setw(13) << _PAREst.f[0] << std::endl;
+  }
 
-  _MLEOpt = PE.solution();
-
-  stats.walltime_slvmle += stats.walltime( t_slvmle );
-  stats.walltime_all    += stats.walltime( t_slvmle );
+  stats.walltime_slvmle += stats.lapse( t_slvmle );
+  stats.walltime_all    += stats.lapse( t_slvmle );
 
   return iflag;
 }
@@ -455,8 +1003,10 @@ int
 PAREST::mle_solve
 ( size_t const nsam, std::vector<double> const& C0, std::ostream& os )
 {
-  auto&& t_slvmle = stats.start();
+  _PAREst.reset();
 
+  auto&& t_slvmle = stats.start();
+  
   // Update constants
   if( C0.size() && C0.size() == _nc ) _vCSTVAL = C0;
   if( _nc && _vCSTVAL.empty() ) throw Exceptions( Exceptions::BADCONST );
@@ -488,17 +1038,21 @@ PAREST::mle_solve
   int iflag = PE.solve( nsam, _vPARLB.data(), _vPARUB.data(), _vCSTVAL.data(), nullptr, 1 );
 
   if( options.DISPLEVEL > 1 )
-    os << "#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
-       << "#  STATIONARY: " << PE.is_stationary( 1e-6 ) << std::endl
-       << std::endl;
+    os << "\n#  FEASIBLE:   " << PE.is_feasible( 1e-6 )   << std::endl
+       << "#  STATIONARY: " << PE.is_stationary( 1e-6 ) << std::endl;
 
-  if( options.DISPLEVEL )
-    os << "# PARAMETER ESTIMATION SOLUTION:\n" << PE.solution();
+  _PAREst = PE.solution();
+  if( options.DISPLEVEL ){
+    os << "\n# MAXIMUM LIKELIHOOD ESTIMATE:\n"
+       << "STATUS: " << iflag << std::endl
+       << std::scientific << std::setprecision(6) << std::right;
+    for( unsigned int i=0; i<_np; i++ )
+      os << "P[" << i << "]: " << std::setw(13) << _PAREst.x[i] << std::endl;
+    os << "LIKELIHOOD: " << std::setw(13) << _PAREst.f[0] << std::endl;
+  }
 
-  _MLEOpt = PE.solution();
-
-  stats.walltime_slvmle += stats.walltime( t_slvmle );
-  stats.walltime_all    += stats.walltime( t_slvmle );
+  stats.walltime_slvmle += stats.lapse( t_slvmle );
+  stats.walltime_all    += stats.lapse( t_slvmle );
 
   return iflag;
 }
@@ -508,13 +1062,22 @@ std::tuple<double,double,double>
 PAREST::chi2_test
 ( double const& conf, std::ostream& os )
 {
-  return chi2_test( conf, _MLEOpt.x, _MLEOpt.p, os );
+  return _chi2_test( conf, _PAREst.x, _PAREst.p, options.DISPLEVEL, os );
 }
 
 inline
 std::tuple<double,double,double>
 PAREST::chi2_test
 ( double const& conf, std::vector<double> const& P0, std::vector<double> const& C0, std::ostream& os )
+{
+  return _chi2_test( conf, _PAREst.x, _PAREst.p, options.DISPLEVEL, os );
+}
+
+inline
+std::tuple<double,double,double>
+PAREST::_chi2_test
+( double const& conf, std::vector<double> const& P0, std::vector<double> const& C0, 
+  int const disp, std::ostream& os )
 {
   double Chi2Val = 0./0.;
   chi_squared dist( _nd-_np );
@@ -539,30 +1102,31 @@ PAREST::chi2_test
     return std::make_tuple( Chi2Val, 0., Chi2Crit );
   }
 
-  if( options.DISPLEVEL > 0 ){
+  if( disp > 0 ){
     os << "\n# CHI-SQUARED TEST: " << std::scientific << std::setprecision(3) << Chi2Val
-       << (Chi2Val < Chi2Crit? " < ": " > ") << Chi2Crit << " CRITICAL CHI_SQUARED VALUE (95%, " << _nd-_np << " DOF)"
+       << (Chi2Val < Chi2Crit? " < ": " > ") << Chi2Crit << " CRITICAL CHI_SQUARED VALUE (" << std::fixed << std::setprecision(0) << conf*1e2 << "%, " << _nd-_np << " DOF)"
        << std::endl;
   }
   
   double Chi2Conf = cdf( dist, Chi2Val );
-  if( options.DISPLEVEL > 0 )
-    os << "# CHI-SQUARED TEST PASSED WITH >" << std::fixed << std::setprecision(1) << Chi2Conf*1e2 << "% CONFIDENCE LEVEL"
+  if( disp > 0 )
+    os << "# CHI-SQUARED TEST PASSED WITH >" << std::fixed << std::setprecision(0) << Chi2Conf*1e2 << "% CONFIDENCE LEVEL"
        << std::endl;
 
   return std::make_tuple( Chi2Val, Chi2Conf, Chi2Crit );
 }
 
 inline
-arma::mat
-PAREST::cov_bootstrap
+void
+PAREST::bootstrap_sample
 ( size_t const nsam, std::ostream& os )
 {  
-  _CRSam.reset();
+  _WEISam.reset();
+  _PARSam.reset();
 
-  if( NLP::get_status( _MLEOpt.stat ) != NLP::SUCCESSFUL 
-   && NLP::get_status( _MLEOpt.stat ) != NLP::FAILURE )
-    return _CRSam;
+  if( NLP::get_status( _PAREst.stat ) != NLP::SUCCESSFUL 
+   && NLP::get_status( _PAREst.stat ) != NLP::FAILURE )
+    return;
 
   // Simulate model at MLE estimate
   double MLERes = 0./0.;
@@ -571,16 +1135,16 @@ PAREST::cov_bootstrap
   std::vector<FFVar> vMLECrit( _nm, 0. );
   for( size_t m=0; m<_nm; ++m ){
     if( !_ny[m] ) continue;
-    vMLECrit[m] = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &_vDAT[m] );
+    vMLECrit[m] = OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_PAREst.p, &_vDAT[m] );
     _MLECrit += vMLECrit[m];
   }
 
   try{
-    _dag->eval( _wkOUT, 1, &_MLECrit, &MLERes, _np, _vPAR.data(), _MLEOpt.x.data(),
-                _nc, _vCST.data(), _MLEOpt.p.data() );
+    _dag->eval( _wkOUT, 1, &_MLECrit, &MLERes, _np, _vPAR.data(), _PAREst.x.data(),
+                _nc, _vCST.data(), _PAREst.p.data() );
   }
   catch(...){
-    return _CRSam;
+    return;
   }
 
   auto vDAT0 = _vDAT;
@@ -595,27 +1159,28 @@ PAREST::cov_bootstrap
     }
   }
 
-  return cov_bootstrap( vDAT0, nsam, os );
+  return bootstrap_sample( vDAT0, nsam, os );
 }
 
 inline
-arma::mat
-PAREST::cov_bootstrap
+void
+PAREST::bootstrap_sample
 ( std::vector<Experiment> const& data, size_t const nsam, std::ostream& os )
 {
   std::vector<std::vector<Experiment>> vDAT0;
   for( auto const& exp : data )
     _add_data( vDAT0, exp );
 
-  return cov_bootstrap( vDAT0, nsam, os );
+  return bootstrap_sample( vDAT0, nsam, os );
 }
 
 inline
-arma::mat
-PAREST::cov_bootstrap
+void
+PAREST::bootstrap_sample
 ( std::vector<std::vector<Experiment>> const& data, size_t const nsam, std::ostream& os )
 {
-  _CRSam.reset();
+  _PARSam.reset();
+  _WEISam.reset();
 
   // Define MLE problem
   NLP PE;
@@ -645,13 +1210,15 @@ PAREST::cov_bootstrap
   qrgen noise( eng, boost::uniform_01<double>() );
   noise.engine().seed( 0 );
 
+  std::multimap<double,std::vector<double>> PARBoot;
+
   // Apply bootstrapping to MLE problem
   for( size_t isam=0; isam<nsam; ++isam ){
 
     // Add measurement noise
     auto vDATn = data;
-    auto mean = arma::vec( 1, arma::fill::zeros );
-    auto var  = arma::mat( 1, 1, arma::fill::none );
+    double lkh = 0.;
+    bool first = true;
     for( size_t m=0, e=0; m<_nm; ++m, e=0 ){
       for( auto& EXP : vDATn[m] ){
         for( auto& [ k, RECk ] : EXP.output ){
@@ -659,27 +1226,36 @@ PAREST::cov_bootstrap
           size_t r = 0;
 #endif
           for( auto& YMk : RECk.measurement ){
-            var(0,0) = RECk.variance;
-            //arma::mat dYk = arma::mvnrnd( mean, var );
-            //YMk += dYk(0,0);
-            YMk += quantile( normal( 0, std::sqrt(RECk.variance) ), noise() );
+            double const dY = ( options.RNGSEED?
+                                arma::randn( arma::distr_param( 0., std::sqrt(RECk.variance) ) ):
+                                quantile( normal( 0., std::sqrt(RECk.variance) ), noise() ) );
+            YMk += dY;
 #ifdef MAGNUS__PAREST_CONF_DEBUG
             std::cout << "YM(" << isam << ")[" << std::to_string(m) << "," << std::to_string(e) << "]["
                       << std::to_string(k) << "][" << std::to_string(r++) << "] = "
                       << YMk << std::endl;
+#endif
+            lkh = ( first? arma::log_normpdf( dY, 0., std::sqrt(RECk.variance) ):
+                           log_sum_exp( lkh, arma::log_normpdf( dY, 0., std::sqrt(RECk.variance) ) ) );
+            first = false;
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+            std::cout << dY << "  " << arma::normpdf( dY, 0., std::sqrt(RECk.variance) ) << "  " << arma::log_normpdf( dY, 0., std::sqrt(RECk.variance) ) << "  " << lkh << std::endl;
 #endif
           }
         }
         ++e;
       }
     }
+#ifdef MAGNUS__PAREST_CONF_DEBUG
+    std::cout << "Log Lkh = " << lkh << std::endl;
+#endif
     
     // Update MLE objective - could also use set_obj_lazy - and solve from MLE estimate
     FFMLE OpMLE;
     _MLECrit = 0.;
     for( size_t m=0; m<_nm; ++m ){
       if( !_ny[m] ) continue;
-      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &vDATn[m] );
+      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_PAREst.p, &vDATn[m] );
     }
     if( _nr )
       PE.set_obj( mc::BASE_OPT::MIN, _MLECrit + OpSum( _vREG, 1. ) );
@@ -687,7 +1263,7 @@ PAREST::cov_bootstrap
       PE.set_obj( mc::BASE_OPT::MIN, _MLECrit );
     
     PE.setup();
-    PE.solve( _MLEOpt.x.data(), nullptr, nullptr, _MLEOpt.p.data() );
+    PE.solve( _PAREst.x.data(), nullptr, nullptr, _PAREst.p.data() );
 
     if( options.DISPLEVEL > 2 )
       os << "#  SAMPLE:     " << isam                     << std::endl
@@ -699,7 +1275,8 @@ PAREST::cov_bootstrap
      || ( ( PE.get_status() == NLP::FAILURE
          || PE.get_status() == NLP::INTERRUPTED )
          && PE.is_feasible( options.NLPSLV.FEASTOL ) ) ){
-      _CRSam.insert_rows( _CRSam.n_rows, arma::mat( const_cast<double*>(PE.solution().x.data()), 1, _np, false ) );
+      PARBoot.insert({ lkh, PE.solution().x });
+      //_PARSam.insert_rows( _PARSam.n_rows, arma::mat( const_cast<double*>(PE.solution().x.data()), 1, _np, false ) );
       if( options.DISPLEVEL > 1 ){
         os << std::setw(5) << std::right << isam << ": "
            << std::scientific << std::setprecision(5) << std::setw(12) << PE.solution().f[0] << " | ";
@@ -709,20 +1286,57 @@ PAREST::cov_bootstrap
     }
   }
 
+  _PARSam.resize( PARBoot.size(), _np );
+  _WEISam.resize( PARBoot.size() );
+  size_t r = 0;
+  for( auto it = PARBoot.crbegin(); it != PARBoot.crend(); ++it, ++r ){
+    auto& [lkh,par] = *it;
+    _PARSam.row(r) = arma::rowvec( const_cast<double*>(par.data()), _np, false );
+    _WEISam[r] = -std::log( PARBoot.size() );//lkh;
+  }
+
+  if( options.DISPLEVEL == 1 ){
+    os << "\n# BOOTSTRAPPED CONFIDENCE REGION:\n";
+    os << std::scientific << std::setprecision(5);
+    for( size_t r=0; r<_PARSam.n_rows; ++r ){
+      os << std::setw(5) << std::right << r << ": ";
+      //os << std::setw(12) << _WEISam(r) << " | ";
+      arma::rowvec&& par = _PARSam.row(r);
+      par.raw_print( os );
+      if( r == 2 ){
+        os << "   ..." << std::endl;
+        r += _PARSam.n_rows - 6;
+      }
+    }
+  }
+}
+
+inline
+arma::mat
+PAREST::cov_sample
+( std::ostream& os )
+const
+{
+  return cov_sample( _PARSam, os ); 
+}
+
+inline
+arma::mat
+PAREST::cov_sample
+( arma::mat PARSam, std::ostream& os )
+const
+{
+  if( !PARSam.n_rows ) return arma::mat();
+
   // Estimate covariance around ML estimates
-  arma::mat covSam = _CRSam - arma::kron( arma::conv_to<arma::mat>::from(arma::vec( _MLEOpt.x.data(), _np, false ) ), arma::mat( 1, _CRSam.n_rows, arma::fill::ones ) ).t();
-  covSam = ( covSam.t() * covSam ) / covSam.n_rows;
-  //arma::mat covSam = arma::cov(_CRSam);
+  arma::mat COVSam = arma::cov(PARSam);
 
   if( options.DISPLEVEL > 0 ){
     os << std::scientific << std::setprecision(5);
-    // os << "\nSampled confidence region:\n" << _CRSam;
-    // _CRSam_c.raw_print( os, "\nCENTERED BOOTSTRAP CONFIDENCE REGION:" );
-    covSam.raw_print( os, "\n# PARAMETER COVARIANCE MATRIX (VIA BOOTSTRAPPING):" );
-    //arma::cov(_CRSam).raw_print( os, "\nPARAMETER COVARIANCE MATRIX (VIA BOOTSTRAPPING):" );
+    COVSam.raw_print( os, "\n# PARAMETER COVARIANCE MATRIX (FROM SAMPLE):" );
   }
 
-  return covSam;
+  return COVSam;
 }
 
 inline
@@ -730,8 +1344,8 @@ arma::mat
 PAREST::cov_linearized
 ( std::ostream& os )
 {
-  if( NLP::get_status( _MLEOpt.stat ) != NLP::SUCCESSFUL 
-   && NLP::get_status( _MLEOpt.stat ) != NLP::FAILURE )
+  if( NLP::get_status( _PAREst.stat ) != NLP::SUCCESSFUL 
+   && NLP::get_status( _PAREst.stat ) != NLP::FAILURE )
     return arma::mat();
 
   // Compute confidence ellipsoids in dedicated 
@@ -805,10 +1419,10 @@ PAREST::cov_linearized
     switch( std::get<1>(BASE_PAREST::_vCTR)[g] ){
       case BASE_OPT::LE:
       case BASE_OPT::GE:
-        if( std::fabs( _MLEOpt.f[g+1] ) > options.NLPSLV.FEASTOL ) continue;
+        if( std::fabs( _PAREst.f[g+1] ) > options.NLPSLV.FEASTOL ) continue;
       case BASE_OPT::EQ: 
         vMULMLE.push_back( mc::FFVar( &dagmle, "MG["+std::to_string(g)+"]" ) );
-        dMULMLE.push_back( _MLEOpt.uf[g+1] );
+        dMULMLE.push_back( _PAREst.uf[g+1] );
         FMLE += vCTRMLE[g] * vMULMLE[na++];
         break;
     }
@@ -816,10 +1430,10 @@ PAREST::cov_linearized
 
   // Add active bound constraints
   for( size_t p=0; p<_np; ++p ){  
-    if( ( std::fabs( _MLEOpt.x[p] - _vPARLB[p] ) > options.NLPSLV.FEASTOL )
-     && ( std::fabs( _MLEOpt.x[p] - _vPARUB[p] ) > options.NLPSLV.FEASTOL ) )  continue;
+    if( ( std::fabs( _PAREst.x[p] - _vPARLB[p] ) > options.NLPSLV.FEASTOL )
+     && ( std::fabs( _PAREst.x[p] - _vPARUB[p] ) > options.NLPSLV.FEASTOL ) )  continue;
     vMULMLE.push_back( mc::FFVar( &dagmle, "MP["+std::to_string(p)+"]" ) );
-    dMULMLE.push_back( _MLEOpt.ux[p] );
+    dMULMLE.push_back( _PAREst.ux[p] );
     FMLE += vPARMLE[p] * vMULMLE[na++]; // omit bound constant since to be differentiated
   }
 
@@ -839,9 +1453,9 @@ PAREST::cov_linearized
   for( unsigned k=0; k<_np+na; ++k )
     std::cout << "DFMLE(" << k << ") = " << exDFMLE[k] << std::endl;
   std::vector<double> dDFMLE( _np+na );
-  dagmle.eval( _np+na, pDFMLE, dDFMLE.data(), _np, vPARMLE.data(), _MLEOpt.x.data(),
+  dagmle.eval( _np+na, pDFMLE, dDFMLE.data(), _np, vPARMLE.data(), _PAREst.x.data(),
                vUMLE.size(), vUMLE.data(), dUMLE.data(), _nd, vYMMLE.data(), dYMMLE.data(),
-               _nc, vCSTMLE.data(), _MLEOpt.p.data(), na, vMULMLE.data(), dMULMLE.data() );
+               _nc, vCSTMLE.data(), _PAREst.p.data(), na, vMULMLE.data(), dMULMLE.data() );
   std::cout << "Lagrangian gradient\n " << arma::trans( arma::vec( dDFMLE.data(), _np+na, false ) );
 #endif
 
@@ -858,9 +1472,9 @@ PAREST::cov_linearized
               << exD2FMLE[k] << std::endl;
 #endif
 
-  dagmle.eval( ne, std::get<3>(tD2FMLE), dD2FMLE.data(), _np, vPARMLE.data(), _MLEOpt.x.data(),
+  dagmle.eval( ne, std::get<3>(tD2FMLE), dD2FMLE.data(), _np, vPARMLE.data(), _PAREst.x.data(),
                vUMLE.size(), vUMLE.data(), dUMLE.data(), _nd, vYMMLE.data(), dYMMLE.data(),
-               _nc, vCSTMLE.data(), _MLEOpt.p.data(), na, vMULMLE.data(), dMULMLE.data() );
+               _nc, vCSTMLE.data(), _PAREst.p.data(), na, vMULMLE.data(), dMULMLE.data() );
 
   arma::mat mD2FMLEDYDP( _nd, _np+na );//, arma::fill::zeros );
   arma::mat mD2FMLEDP2( _np+na, _np+na, arma::fill::zeros );
@@ -892,7 +1506,7 @@ PAREST::cov_linearized
 
   if( options.DISPLEVEL ){
     os << std::scientific << std::setprecision(5);
-    mPCOV.submat( 0, 0, _np-1, _np-1 ).raw_print( os, "\n# PARAMETER COVARIANCE MATRIX (VIA LINEARIZATION):" );
+    mPCOV.submat( 0,0, _np-1,_np-1 ).raw_print( os, "\n# PARAMETER COVARIANCE MATRIX (FROM LINEARIZATION):" );
   }
 
   return mPCOV.submat( 0, 0, _np-1, _np-1 );
@@ -946,11 +1560,11 @@ PAREST::conf_ellipsoid
     _MLECrit = 0.;
     for( size_t m=0; m<_nm; ++m ){
       if( !_ny[m] ) continue;
-      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_MLEOpt.p, &_vDAT[m] );
+      _MLECrit += OpMLE( _vPAR.data(), _dag, _vPAR, _vCST, _vCON[m], _vOUT[m], &_PAREst.p, &_vDAT[m] );
     }
     try{
-      _dag->eval( _wkOUT, 1, &_MLECrit, &rhs, _np, _vPAR.data(), _MLEOpt.x.data(),
-                  _nc, _vCST.data(), _MLEOpt.p.data() );
+      _dag->eval( _wkOUT, 1, &_MLECrit, &rhs, _np, _vPAR.data(), _PAREst.x.data(),
+                  _nc, _vCST.data(), _PAREst.p.data() );
       rhs *= 2. * _np/double(_nd-_np) * quantile( fisher_f( _np, _nd-_np ), conflevel );
     }
     catch(...){
@@ -979,7 +1593,7 @@ PAREST::conf_ellipsoid
 #endif
 
   CRSam = points.t() * arma::sqrtmat_sympd( covmat.submat(ij,ij) ) * std::sqrt(rhs);
-  CRSam += arma::kron( arma::conv_to<arma::mat>::from(arma::vec( _MLEOpt.x.data(), _np, false ) ).rows( ij ),
+  CRSam += arma::kron( arma::conv_to<arma::mat>::from(arma::vec( _PAREst.x.data(), _np, false ) ).rows( ij ),
                        arma::mat( 1, nsam, arma::fill::ones ) ).t();
   if( options.DISPLEVEL ){
     os << std::endl << "# " << std::fixed << std::setprecision(0) << conflevel*1e2

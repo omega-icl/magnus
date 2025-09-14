@@ -15,6 +15,7 @@
 #include <armadillo>
 
 #include "ffunc.hpp"
+#include "base_opt.hpp"
 #include "base_sampling.hpp"
 
 namespace mc
@@ -26,7 +27,8 @@ namespace mc
 //! problems
 ////////////////////////////////////////////////////////////////////////
 class BASE_MBFA
-: public virtual BASE_SAMPLING
+: public virtual BASE_OPT,
+  public virtual BASE_SAMPLING
 {
 protected:
 
@@ -95,10 +97,15 @@ public:
     const
     { return *_dag; }
 
-  //! @brief Set pointer to DAG
+  //! @brief Set DAG
   void set_dag
     ( FFGraph& dag )
     { _dag = &dag; }
+
+  //! @brief Set pointer to DAG
+  void set_dag
+    ( FFGraph* dag )
+    { _dag = dag; }
 
   //! @brief Get size of model constraints
   size_t ng
@@ -231,22 +238,6 @@ public:
       _vCTR = G;
     }
 
-  //! @brief Set single model-based constraint
-  void set_constraint
-    ( FFVar const& G )
-    {
-      _ng = 1;
-      _vCTR = { G };
-    }
-
-  //! @brief Add single model-based constraint
-  void add_constraint
-    ( FFVar const& G )
-    {
-      _ng++;
-      _vCTR.push_back( G );
-    }
-
   //! @brief Add vector of model-based constraints
   void add_constraint
     ( std::vector<FFVar> const& G )
@@ -254,6 +245,26 @@ public:
       if( G.empty() ) return;
       _ng += G.size();
       _vCTR.insert( _vCTR.end(), G.cbegin(), G.cend() );
+    }
+
+  //! @brief Set single model-based constraint
+  void set_constraint
+    ( FFVar const& lhs, t_CTR const type=LE, FFVar const& rhs=FFVar(0.) )
+    {
+      assert( type != EQ );
+      _ng = 1;
+      if( type == LE ) _vCTR = { lhs - rhs };
+      else             _vCTR = { rhs - lhs };
+    }
+
+  //! @brief Add single model-based constraint
+  void add_constraint
+    ( FFVar const& lhs, t_CTR const type=LE, FFVar const& rhs=FFVar(0.) )
+    {
+      assert( type != EQ );
+      _ng++;
+      if( type == LE ) _vCTR.push_back( lhs - rhs );
+      else             _vCTR.push_back( rhs - lhs );
     }
 
   //! @brief Reset vector of model-based constraints

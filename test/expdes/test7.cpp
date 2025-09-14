@@ -175,7 +175,7 @@ int main()
   /////////////////////////////////////////////////////////////////////////
   // Define MBDOE
 
-  size_t const NEXP = 4;
+  size_t const NEXP = 8;
 
   mc::EXPDES DOE;
   DOE.options.CRITERION = mc::EXPDES::ODIST;
@@ -231,7 +231,7 @@ int main()
   DOE.set_model( Y, YVAR ); // to give output variables about the same weight
   DOE.setup();
 
-  size_t NSAM = 32;
+  size_t NSAM = 64;
   DOE.sample_support( NSAM );
   //DOE.combined_solve( NEXP );
   DOE.effort_solve( NEXP );//, false );

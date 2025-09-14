@@ -5,7 +5,7 @@ include $(PATH_MAGNUS)/src/makeoptions.mk
 
 #####
 
-all : test0 test1 test2 test2b
+all : test0 test0b test1 test2 test2b
 
 test% : test%.o
 	$(CPP) $< $(LIB_MAGNUS) -o $@

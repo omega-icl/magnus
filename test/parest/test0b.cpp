@@ -1,3 +1,4 @@
+//#define MAGNUS__NSFEAS_SAMPLE_DEBUG
 #include "parest.hpp"
 
 // The problem of calibrating a temperature-dependent growth rate model
@@ -18,10 +19,14 @@ int main()
   const unsigned NY = 1;  // Number of outputs
 
   std::vector<mc::FFVar> P( NP );  // Parameters
-  mc::FFVar& Tmin = P[0]; P[0].set( &DAG, "Tmin" );
-  mc::FFVar& Tmax = P[1]; P[1].set( &DAG, "Tmax" );
-  mc::FFVar& b    = P[2]; P[2].set( &DAG, "b" );
-  mc::FFVar& c    = P[3]; P[3].set( &DAG, "c" );
+  P[0].set( &DAG, "Tmin" ); mc::FFVar& Tmin = P[0]; 
+  P[1].set( &DAG, "Tmax" ); mc::FFVar& Tmax = P[1]; 
+  P[2].set( &DAG, "b" );    mc::FFVar& b    = P[2]; 
+  P[3].set( &DAG, "c" );    mc::FFVar& c    = P[3]; 
+//  P[0].set( &DAG, "Tmin" ); mc::FFVar Tmin = P[0] * 1e2; 
+//  P[1].set( &DAG, "Tmax" ); mc::FFVar Tmax = P[1] * 1e2; 
+//  P[2].set( &DAG, "b" );    mc::FFVar b    = P[2] / 1e2; 
+//  P[3].set( &DAG, "c" );    mc::FFVar c    = P[3] / 1e1; 
 
   std::vector<mc::FFVar> U( NU );  // Parameters
   mc::FFVar& T = U[0]; U[0].set( &DAG, "T" );
@@ -54,22 +59,30 @@ int main()
   };
 
   /////////////////////////////////////////////////////////////////////////
-  // Perform MLE calculation
-
+  // Perform parameter estimation
   std::vector<double> P0 { 275, 320, 0.03, 0.3  };
   std::vector<double> PLB{ 255, 315, 0.01, 0.05 };
   std::vector<double> PUB{ 290, 330, 0.1,  1    };
 
+  double Tval, Yval;
+  for( auto const& Exp : Data ){
+    Tval = *Exp.control.data();
+    DAG.eval( 1, Y.data(), &Yval, 1, &T, &Tval, NP, P.data(), P0.data() );
+    std::cout << Tval << "  " << Yval << std::endl;
+  }
+
   // Parameter estimation solver
   mc::PAREST PE;
   PE.options.DISPLEVEL = 1;
+  PE.options.RNGSEED   = -1;
   PE.options.NLPSLV.DISPLEVEL   = 0;
   PE.options.NLPSLV.GRADCHECK   = 0;
   PE.options.NLPSLV.MAXTHREAD   = 0;
   PE.options.NSSLV.DISPLEVEL    = 1;
-  PE.options.NSSLV.NUMLIVE      = 200;
+  PE.options.NSSLV.DISPITER     = 100;
+  PE.options.NSSLV.NUMLIVE      = 400;
   PE.options.NSSLV.NUMPROP      = 50;
-  PE.options.NSSLV.LKHTOL       = 0.001;
+  PE.options.NSSLV.LKHTOL       = 0.01;
   //PE.options.NLPSLV.GRADMETH = PE.options.NLPSLV.FSYM;//FAD;
 
   PE.set_dag( DAG );
@@ -78,11 +91,30 @@ int main()
   PE.set_data( Data );
 
   PE.setup();
-  //PE.bpe_solve();
-  PE.sme_solve( 0.85 );
 
-  //PE.mle_solve( 64 );
-  //auto CHI2TEST = PE.chi2_test( 0.85 );
+  // Set-membership estimation
+  PE.sme_solve( 0.90 );
+
+  // Bayesian parameter estimation
+  PE.bpe_solve();
+  PE.hpd_region( 0.95 );
+  PE.hpd_interval( 0.95 );
+  PE.hpd_quantile( 0.5 );
+  PE.hpd_mean();
+
+  // Maximum likelihood parameter estimation
+  PE.mle_solve( 64 );
+  PE.chi2_test( 0.90 );
+  PE.conf_interval( PE.cov_linearized(), 0.95, "T" );
+
+  // Bootstrapping
+  PE.bootstrap_sample( 1000 );
+  PE.cov_sample();
+  PE.hpd_region( 0.95 ); 
+  PE.hpd_interval( 0.95 );
+  PE.hpd_quantile( 0.5 );
+  PE.hpd_mean();
+  
 /*
   //PE.mle_solve( 10 );
   auto MLEOPT   = PE.mle();

@@ -180,20 +180,35 @@ pyPAREST
    py::arg("rhs")=mc::FFVar(0.),
    "add constraint"
  )
- //.def_static(
- //  "sobol_sample",
- //  static_cast<std::list<std::vector<double>> (*)(size_t, std::vector<double> const&, std::vector<double> const&)>(&PAREST::uniform_sample)
- //)
- .def_property_readonly(
-   "mle",
-   []( PAREST const& self ){ return self.mle(); },
-   py::return_value_policy::reference_internal,
-   "maximum likelihood solution"
- )
  .def(
    "setup",
    []( PAREST& self ){ self.setup(); },
    "setup parameter estimation problem"
+ )
+ .def(
+   "sme_solve",
+   []( PAREST& self, double const& conf, std::vector<double> const& cst )
+   { py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     return self.sme_solve( conf, cst ); 
+   },
+   py::arg("conf")=0.95,
+   py::arg("cst")=std::vector<double>(),
+   "solve set-membership parameter estimation problem"
+ )
+ .def(
+   "bpe_solve",
+   []( PAREST& self, std::vector<double> const& cst )
+   { py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     return self.bpe_solve( cst ); 
+   },
+   py::arg("cst")=std::vector<double>(),
+   "solve Bayesian parameter estimation problem"
  )
  .def(
    "mle_solve",
@@ -206,7 +221,7 @@ pyPAREST
    },
    py::arg("par"),
    py::arg("cst")=std::vector<double>(),
-   "solve gradient-based parameter estimation problem"
+   "solve maximum-likelihood parameter estimation problem"
  )
  .def(
    "mle_solve",
@@ -219,7 +234,7 @@ pyPAREST
    },
    py::arg("nsam"),
    py::arg("cst")=std::vector<double>(),
-   "multistart solve gradient-based parameter estimation problem"
+   "solve maximum-likelihood parameter estimation problem"
  )
  .def(
    "chi2_test",
@@ -234,47 +249,55 @@ pyPAREST
    "compute chi-squared test (goodness-of-fit)"
  )
  .def(
-   "cov_bootstrap",
+   "bootstrap_sample",
    []( PAREST& self, std::vector<std::vector<PAREST::Experiment>> const& data, size_t const nsam ){
      py::scoped_ostream_redirect stream(
        std::cout,                                // std::ostream&
        py::module_::import("sys").attr("stdout") // Python output
      );
-     arma::mat covmat = self.cov_bootstrap( data, nsam );
-     constexpr size_t elsize = sizeof(double);
-     size_t const ndim = 2;
-     size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
-     size_t strides[ndim]{elsize, covmat.n_rows * elsize};
-     return py::array_t<double>( shape, strides, covmat.memptr() );
+     return self.bootstrap_sample( nsam );
    },
-   py::return_value_policy::reference_internal,
-   "compute parameter covariance matrix using bootstrapping"
+   "bootstrap confidence region around given data set"
  )
  .def(
-   "cov_bootstrap",
+   "bootstrap_sample",
    []( PAREST& self, std::vector<PAREST::Experiment> const& data, size_t const nsam ){
      py::scoped_ostream_redirect stream(
        std::cout,                                // std::ostream&
        py::module_::import("sys").attr("stdout") // Python output
      );
-     arma::mat covmat = self.cov_bootstrap( data, nsam );
-     constexpr size_t elsize = sizeof(double);
-     size_t const ndim = 2;
-     size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
-     size_t strides[ndim]{elsize, covmat.n_rows * elsize};
-     return py::array_t<double>( shape, strides, covmat.memptr() );
+     return self.bootstrap_sample( nsam );
    },
-   py::return_value_policy::reference_internal,
-   "compute parameter covariance matrix using bootstrapping"
+   "bootstrap confidence region around given data set"
  )
  .def(
-   "cov_bootstrap",
+   "bootstrap_sample",
    []( PAREST& self, size_t const nsam ){
      py::scoped_ostream_redirect stream(
        std::cout,                                // std::ostream&
        py::module_::import("sys").attr("stdout") // Python output
      );
-     arma::mat covmat = self.cov_bootstrap( nsam );
+     return self.bootstrap_sample( nsam );
+   },
+   "bootstrap confidence region around best parameter estimates"
+ )
+ .def(
+   "cov_sample",
+   []( PAREST& self, py::array_t<double, py::array::c_style | py::array::forcecast> parsam ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     // Request a buffer descriptor from Python
+     py::buffer_info info = parsam.request();
+     // Check dimension and type
+     if( info.format != py::format_descriptor<double>::format() )
+       throw std::runtime_error( "Incompatible format: double array expected" );
+     if( info.ndim != 2 )
+       throw std::runtime_error( "Incompatible buffer dimension: 2d array expected" );
+     // Convert arma::mat to numpy array using auxiliary memory
+     arma::mat covmat = self.cov_sample(
+       arma::mat( static_cast<double*>(info.ptr), info.shape[0], info.shape[1], false, true ) );
      constexpr size_t elsize = sizeof(double);
      size_t const ndim = 2;
      size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
@@ -282,7 +305,24 @@ pyPAREST
      return py::array_t<double>( shape, strides, covmat.memptr() );
    },
    py::return_value_policy::reference_internal,
-   "compute parameter covariance matrix using bootstrapping"
+   "compute parameter covariance matrix from given parameter samples"
+ )
+ .def(
+   "cov_sample",
+   []( PAREST& self ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::mat covmat = self.cov_sample();
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 2;
+     size_t shape[ndim]{covmat.n_rows, covmat.n_cols};
+     size_t strides[ndim]{elsize, covmat.n_rows * elsize};
+     return py::array_t<double>( shape, strides, covmat.memptr() );
+   },
+   py::return_value_policy::reference_internal,
+   "compute parameter covariance matrix from sampled parameter posterior"
  )
  .def(
    "cov_linearized",
@@ -368,14 +408,133 @@ pyPAREST
    py::return_value_policy::reference_internal,
    "compute parameter confidence intervals"
  )
+ .def(
+   "hpd_region",
+   []( PAREST const& self, const double& level ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     auto [par,wei] = self.hpd_region( level );
+     constexpr size_t elsize = sizeof(double);
+     size_t const vndim = 1;
+     size_t vshape[vndim]{wei.n_rows};
+     size_t vstrides[vndim]{elsize};
+     size_t const mndim = 2;
+     size_t mshape[mndim]{par.n_rows, par.n_cols};
+     size_t mstrides[mndim]{elsize, par.n_rows * elsize};
+     return std::make_pair( py::array_t<double>( mshape, mstrides, par.memptr() ),
+                            py::array_t<double>( vshape, vstrides, wei.memptr() ) );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "weighted samples in level*100% HPD region"
+ )
+ .def(
+   "hpd_interval",
+   []( PAREST const& self, const double& level ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     auto [lvec,uvec] = self.hpd_interval( level );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{lvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return std::make_pair( py::array_t<double>( shape, strides, lvec.memptr() ),
+                            py::array_t<double>( shape, strides, uvec.memptr() ) );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "lower and upper range of level*100% HPD intervals"
+ )
+ .def(
+   "hpd_quantile",
+   []( PAREST const& self, const double& level ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::vec crvec = self.hpd_quantile( level );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{crvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return py::array_t<double>( shape, strides, crvec.memptr() );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "level*100% quantile of parameter posterior"
+ )
+ .def(
+   "hpd_min",
+   []( PAREST const& self, const double& level ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::vec crvec = self.hpd_min( level );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{crvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return py::array_t<double>( shape, strides, crvec.memptr() );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "min range of level*100% HPD region"
+ )
+ .def(
+   "hpd_max",
+   []( PAREST const& self, const double& level ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::vec crvec = self.hpd_max( level );
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{crvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return py::array_t<double>( shape, strides, crvec.memptr() );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "max range of level*100% HPD region"
+ )
  .def_property_readonly(
-   "crsam",
+   "hpd_mean",
    []( PAREST const& self ){
      py::scoped_ostream_redirect stream(
        std::cout,                                // std::ostream&
        py::module_::import("sys").attr("stdout") // Python output
      );
-     arma::mat crmat = self.crsam();
+     arma::vec crvec = self.hpd_mean();
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{crvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return py::array_t<double>( shape, strides, crvec.memptr() );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "mean of parameter posterior"
+ )
+ .def_property_readonly(
+   "par_best",
+   []( PAREST const& self ){ return self.par_best(); },
+   py::return_value_policy::reference_internal,
+   "best parameter estimates"
+ )
+ .def_property_readonly(
+   "par_sample",
+   []( PAREST const& self ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::mat crmat = self.par_sample();
      constexpr size_t elsize = sizeof(double);
      size_t const ndim = 2;
      size_t shape[ndim]{crmat.n_rows, crmat.n_cols};
@@ -384,7 +543,25 @@ pyPAREST
    },
    //py::return_value_policy::take_ownership,
    py::return_value_policy::reference_internal,
-   "bootstrapped confidence region"
+   "sampled parameter values"
+ )
+ .def_property_readonly(
+   "par_weight",
+   []( PAREST const& self ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     arma::vec crvec = self.wei_sample();
+     constexpr size_t elsize = sizeof(double);
+     size_t const ndim = 1;
+     size_t shape[ndim]{crvec.n_rows};
+     size_t strides[ndim]{elsize};
+     return py::array_t<double>( shape, strides, crvec.memptr() );
+   },
+   //py::return_value_policy::take_ownership,
+   py::return_value_policy::reference_internal,
+   "sampled parameter weights"
  )
 ;
 
@@ -498,7 +675,9 @@ pyPARESTOptions
  .def( py::init<>() )
  .def( py::init<PAREST::Options const&>() )
  .def_readwrite( "DISPLEVEL",   &PAREST::Options::DISPLEVEL,   "Verbosity level [Default: 1]" )
- .def_readwrite( "NLPSLV",      &PAREST::Options::NLPSLV,      "Options of gradient-based NLP solver" )
+ .def_readwrite( "RNGSEED",     &PAREST::Options::RNGSEED,     "Random-number generator seed (=0: Sobol sampling; >0: seed set to specified value; <0: seed set to a value drawn from std::random_device) [Default: -1]" )
+ .def_readwrite( "NLPSLV",      &PAREST::Options::NLPSLV,      "Options of gradient-based solver" )
+ .def_readwrite( "NSSLV",       &PAREST::Options::NSSLV,       "Options of nested sampling solver" )
 ;
 
 }

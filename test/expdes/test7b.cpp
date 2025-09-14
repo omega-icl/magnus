@@ -267,7 +267,7 @@ int main()
   DOE.set_constraint( G );
   DOE.setup();
 
-  size_t NUSAM = 128;
+  size_t NUSAM = 64;
   DOE.sample_support( NUSAM );
   //DOE.combined_solve( NEXP );
   DOE.effort_solve( NEXP );//, false );
