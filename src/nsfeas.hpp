@@ -5,7 +5,7 @@
 /*!
 \page page_NSFEAS Model-based Feasibility Analysis using Nested Sampling
 \author Benoit Chachuat <tt>(b.chachuat@imperial.ac.uk)</tt>
-\version 1.0
+\version 1.1
 \date 2025
 \bug No known bugs.
 */
@@ -65,6 +65,9 @@ protected:
   //! @brief vector of sampled control candidates
   std::vector<std::vector<double>>             _vCONSAM;
 
+  //! @brief vector of sampled control proposals
+  std::vector<std::vector<double>>             _vCONPROP;
+
   //! @brief local copy of constraints
   std::vector<FFVar>                           _vCTR;
 
@@ -77,11 +80,17 @@ protected:
   //! @brief criteria values
   std::vector<double>                          _dVAL;
 
+  //! @brief vector of sampled criteria values
+  std::vector<std::vector<double>>             _vVALSAM;
+
   //! @brief criteria subgraph
   FFSubgraph                                   _sgVAL;
 
   //! @brief work array for criteria evaluations
-  std::vector<double>                          _wkVAL;
+  std::vector<double>                          _wkD;
+
+  // Thread storage for criteria evaluations
+  std::vector<FFGraph::Worker<double>>         _wkVAL;
 
   //! @brief data matrix for current nest
   arma::mat                                    _nestData;
@@ -264,9 +273,9 @@ public:
     //! @brief Constructor for error <a>ierr</a>
     Exceptions( TYPE ierr ) : _ierr( ierr ){}
     //! @brief Inline function returning the error flag
-    int ierr(){ return _ierr; }
+    int ierr() const { return _ierr; }
     //! @brief Inline function returning the error description
-    std::string what(){
+    std::string what() const {
       switch( _ierr ){
         case BADSIZE:
           return "NSFEAS::Exceptions  Inconsistent dimensions";
@@ -455,29 +464,66 @@ NSFEAS::_sample_ini
   // Nest bounds
   _nestLB = arma::vec( _vCONLB );
   _nestUB = arma::vec( _vCONUB );
-
-  // Sample nest
   size_t const NLIVE0 = _liveFEAS.size();
-  for( size_t s=0; _liveFEAS.size() < NLIVE0 + nprop; ++s, ++stats.numfct ){ // to account for failures
-    // Sample new point
-    _sample_bounds( os );
-    std::vector<double> const& dCON = _vCONSAM.back();
 
-    // Evaluate new point
+  // Sample nest in parallel
+  if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
+    // Sample new points
+    for( size_t s=0; _vCONSAM.size() < NLIVE0 + nprop; ++s ){
+      _sample_bounds( os );
+    }
+
+    // Evaluate new points
     try{
-      _dag->eval( _sgVAL, _wkVAL, _vVAL, _dVAL, _vCON, dCON );
-      _liveFEAS.insert( { _dVAL[options.FEASCRIT], { dCON.data(), _dVAL[0], _dVAL[2+(int)options.LKHCRIT] } } );
-      if( _feasible( _dVAL[options.FEASCRIT], os ) ) ++stats.numfeas;
+      _dag->veval( _sgVAL, _wkD, _wkVAL, _vVAL, _vVALSAM, _vCON, _vCONSAM );
     }
     catch(...){
-      ++stats.numerr;
-      continue;
+      return false;
     }
 
-    if( ( options.MAXCPU > 0 && stats.to_time( stats.lapse( tstart ) ) >= options.MAXCPU )
-     || ( options.MAXERR > 0 && stats.numerr >= options.MAXERR ) )
-      return false;
+    // Add new points to live set
+    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){ // to account for failures
+      if( !_dag->veval_err().at(s) ){
+        _liveFEAS.insert( { DBL_MAX,
+                          { _vCONSAM[s].data(), 0., -DBL_MAX } } );
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        std::cout << "Failed scenario " << s << ":"
+                  << std::right << std::scientific << std::setprecision(5)
+                  << arma::rowvec( const_cast<double*>(_vCONSAM[s].data()), _nu, false );
+#endif
+        ++stats.numerr;
+        continue;
+      }
+      _liveFEAS.insert( { _vVALSAM[s][options.FEASCRIT],
+                        { _vCONSAM[s].data(), _vVALSAM[s][0], _vVALSAM[s][2+(int)options.LKHCRIT] } } );
+      if( _feasible( _vVALSAM[s][options.FEASCRIT], os ) ) ++stats.numfeas;
+    }
   }
+
+  // Sample nest sequentially
+  else{
+    for( size_t s=0; _liveFEAS.size() < NLIVE0 + nprop; ++s, ++stats.numfct ){ // to account for failures
+      // Sample new point
+      _sample_bounds( os );
+      std::vector<double> const& dCON = _vCONSAM.back();
+
+      // Evaluate new point
+      try{
+        _dag->eval( _sgVAL, _wkD, _vVAL, _dVAL, _vCON, dCON );
+        _liveFEAS.insert( { _dVAL[options.FEASCRIT], { dCON.data(), _dVAL[0], _dVAL[2+(int)options.LKHCRIT] } } );
+        if( _feasible( _dVAL[options.FEASCRIT], os ) ) ++stats.numfeas;
+      }
+      catch(...){
+        ++stats.numerr;
+        continue;
+      }
+
+      if( ( options.MAXCPU > 0 && stats.to_time( stats.lapse( tstart ) ) >= options.MAXCPU )
+       || ( options.MAXERR > 0 && stats.numerr >= options.MAXERR ) )
+        return false;
+    }
+  }
+  
   return true;
 }
 
@@ -551,38 +597,46 @@ NSFEAS::_update_nest
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   std::cout << "Data covariance:\n" << covData;
 #endif
-  if( !arma::chol( _nestShape, covData, "lower" ) ) return false;
-  _nestData.each_col() -= _nestCentre;
-
-  arma::vec covMag( _nestData.n_cols );
-  c=0;
-  _nestData.each_col(
-    [&]( arma::vec const& v )
-    { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covMag(c++) = arma::norm( x, 2 ); }
-  );
-
-#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-  std::cout << "Magnification:\n" << arma::max( covMag ) << std::endl; //covMag;
-#endif
-
-  _nestShape *= arma::max( covMag ) * (1+factor);
-
-#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-  std::cout << "   " << std::right << std::scientific << std::setprecision(5);
-  for( size_t i=0; i<_nu; ++i ){
-    std::cout << std::setw(13) << _nestCentre(i)-_nestShape(i,i)
-              << std::setw(13) << _nestCentre(i)+_nestShape(i,i);
+  if( !arma::chol( _nestShape, covData, "lower" ) ){
+    if( options.DISPLEVEL )
+      std::cout << "Cholesky factorization failed, rank = " << arma::rank( covData ) << std::endl;
+    _nestCentre = 0.5 * ( _nestLB + _nestUB );
+    _nestShape  = arma::diagmat( (0.5*std::sqrt(_nu)) * ( _nestUB - _nestLB ) );
+    //return false;
   }
-  std::cout << std::endl;
+  else{
+    _nestData.each_col() -= _nestCentre;
 
-  arma::vec covChk( _nestData.n_cols );
-  c=0;
-  _nestData.each_col(
-    [&]( arma::vec const& v )
-    { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covChk(c++) = arma::norm( x, 2 ); }
-  );
-  std::cout << "Check: " << arma::max( covChk ) << std::endl;
+    arma::vec covMag( _nestData.n_cols );
+    c=0;
+    _nestData.each_col(
+      [&]( arma::vec const& v )
+      { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covMag(c++) = arma::norm( x, 2 ); }
+    );
+
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << "Magnification:\n" << arma::max( covMag ) << std::endl; //covMag;
 #endif
+
+    _nestShape *= arma::max( covMag ) * (1+factor);
+
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+    std::cout << "   " << std::right << std::scientific << std::setprecision(5);
+    for( size_t i=0; i<_nu; ++i ){
+      std::cout << std::setw(13) << _nestCentre(i)-_nestShape(i,i)
+                << std::setw(13) << _nestCentre(i)+_nestShape(i,i);
+    }
+    std::cout << std::endl;
+
+    arma::vec covChk( _nestData.n_cols );
+    c=0;
+    _nestData.each_col(
+      [&]( arma::vec const& v )
+      { arma::vec x(_nu); arma::solve( x, arma::trimatl(_nestShape), v ); covChk(c++) = arma::norm( x, 2 ); }
+    );
+    std::cout << "Check: " << arma::max( covChk ) << std::endl;
+#endif
+  }
 
   return true;
 }
@@ -727,27 +781,72 @@ NSFEAS::_sample_feas
       std::cout << std::endl;
     }
 
+    // Sample proposals in nest
     size_t const NSAM0 = _vCONSAM.size();
     for( size_t s=0; !flag && _vCONSAM.size() < NSAM0 + options.NUMPROP; ++s ){
+      _sample_nest( true, os );
+    }
 
-      // Sample candidate in nest
-      if( !_sample_nest( true, os ) ) continue; // New sample must be within bounds
-      std::vector<double> const& dCON = _vCONSAM.back();
-      ++stats.numfct;
-      
-      // Evaluate candidate
+    // Evaluate proposals in parallel
+    if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
       try{
-        _dag->eval( _sgVAL, _wkVAL, _vVAL, _dVAL, _vCON, dCON );
-      }      
+        auto itSAM0 = _vCONSAM.begin(); std::advance( itSAM0, NSAM0 );
+        //_vCONPROP.assign( itSAM0, _vCONSAM.end() );
+        // Move elements to _vCONPROP to avoid unnecessary memory allocation
+        _vCONPROP.assign( std::make_move_iterator( itSAM0 ), std::make_move_iterator( _vCONSAM.end() ) );
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        for( auto const& dCON : _vCONPROP )
+          std::cout << std::right << std::scientific << std::setprecision(5)
+                    << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
+        _vCONSAM.erase( itSAM0, _vCONSAM.end() );
+        _vVALSAM.resize( _vCONPROP.size() );
+        _dag->veval( _sgVAL, _wkD, _wkVAL, _vVAL, _vVALSAM, _vCON, _vCONPROP );
+        // Move elements back into _vCONSAM
+        _vCONSAM.insert( _vCONSAM.end(), std::make_move_iterator( _vCONPROP.begin() ), std::make_move_iterator( _vCONPROP.end() ) );
+      }
       catch(...){
+        return FAILURE;
+      }
+    }
+    
+    // Evaluate proposals sequentially
+    else{
+      _vVALSAM.clear();
+      _vVALSAM.reserve( options.NUMPROP );
+      for( size_t s=0; s<options.NUMPROP; ++s ){
+        std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
+        // Evaluate candidate
+        try{
+          _dag->eval( _sgVAL, _wkD, _vVAL, _dVAL, _vCON, dCON );
+        }      
+        catch(...){
+          ++stats.numerr;
+          continue;
+        }
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        std::cout << (_dVAL[options.FEASCRIT] <= _liveFEAS.rbegin()->first)
+                  << std::right << std::scientific << std::setprecision(5) << std::setw(12) << _dVAL[options.FEASCRIT]
+                  << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
+        _vVALSAM.push_back( _dVAL );
+      }
+    }
+    
+    // Update live set
+    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){
+      _dVAL = _vVALSAM[s];
+      std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
+      // Check for failure during parallel evaluation
+      if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        std::cout << "Failed "
+                  << std::right << std::scientific << std::setprecision(5)
+                  << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
         ++stats.numerr;
         continue;
       }
-#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
-      std::cout << (_dVAL[options.FEASCRIT] <= _liveFEAS.rbegin()->first)
-                << std::right << std::scientific << std::setprecision(5) << std::setw(12) << _dVAL[options.FEASCRIT]
-                << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
-#endif
 
       // Check for improvement for insertion
       if( _dVAL[options.FEASCRIT] > _liveFEAS.rbegin()->first ){
@@ -827,19 +926,69 @@ NSFEAS::_sample_lkh
     if( !_update_nest( _liveLKH, factor, os ) )
       return( 3 );
 
+    // Sample proposals in nest
     size_t const NSAM0 = _vCONSAM.size();
     for( size_t s=0; !flag && _vCONSAM.size() < NSAM0 + options.NUMPROP; ++s ){
+      _sample_nest( true, os );
+    }
 
-      // Sample candidate in nest
-      if( !_sample_nest( true, os ) ) continue; // New sample must be within bounds
-      ++stats.numfct;
-      std::vector<double> const& dCON = _vCONSAM.back();
-      
-      // Evaluate candidate
+    // Evaluate proposals in parallel
+    if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
       try{
-        _dag->eval( _sgVAL, _wkVAL, _vVAL, _dVAL, _vCON, dCON );
-      }      
+        auto itSAM0 = _vCONSAM.begin(); std::advance( itSAM0, NSAM0 );
+        //_vCONPROP.assign( itSAM0, _vCONSAM.end() );
+        // Move elements to _vCONPROP to avoid unnecessary memory allocation
+        _vCONPROP.assign( std::make_move_iterator( itSAM0 ), std::make_move_iterator( _vCONSAM.end() ) );
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        for( auto const& dCON : _vCONPROP )
+          std::cout << std::right << std::scientific << std::setprecision(5)
+                    << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
+        _vCONSAM.erase( itSAM0, _vCONSAM.end() );
+        _vVALSAM.resize( _vCONPROP.size() );
+        _dag->veval( _sgVAL, _wkD, _wkVAL, _vVAL, _vVALSAM, _vCON, _vCONPROP );
+        // Move elements back into _vCONSAM
+        _vCONSAM.insert( _vCONSAM.end(), std::make_move_iterator( _vCONPROP.begin() ), std::make_move_iterator( _vCONPROP.end() ) );
+      }
       catch(...){
+        return FAILURE;
+      }
+    }
+    
+    // Evaluate proposals sequentially
+    else{
+      _vVALSAM.clear();
+      _vVALSAM.reserve( options.NUMPROP );
+      for( size_t s=0; s<options.NUMPROP; ++s ){
+        std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
+        // Evaluate candidate
+        try{
+          _dag->eval( _sgVAL, _wkD, _vVAL, _dVAL, _vCON, dCON );
+        }      
+        catch(...){
+          ++stats.numerr;
+          continue;
+        }
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        std::cout << (_dVAL[options.FEASCRIT] <= _liveFEAS.rbegin()->first)
+                  << std::right << std::scientific << std::setprecision(5) << std::setw(12) << _dVAL[options.FEASCRIT]
+                  << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
+        _vVALSAM.push_back( _dVAL );
+      }
+    }
+    
+    // Update live set
+    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){
+      _dVAL = _vVALSAM[s];
+      std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
+      // Check for failure during parallel evaluation
+      if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
+        std::cout << "Failed "
+                  << std::right << std::scientific << std::setprecision(5)
+                  << arma::rowvec( const_cast<double*>(dCON.data()), _nu, false );
+#endif
         ++stats.numerr;
         continue;
       }

@@ -24,28 +24,6 @@ class FFNSamp
 {
 private:
 
-  // DAG of constraints
-  mutable FFGraph* _DAG;
-  // parameters
-  std::vector<FFVar> const* _FPAR;
-  // constants
-  std::vector<FFVar> const* _FCST;
-  // controls
-  std::vector<FFVar> const* _FCON;
-  // constraints
-  //std::vector<FFVar> const* _FCTR;
-  // likelihood
-  //FFVar const* _FLKH;
-  // functions
-  std::vector<FFVar> _FFCT;
-  
-  // parameter scenarios: _ns x _np
-  std::vector<std::vector<double>> const* _DPAR;
-  // parameter scenario weights: _np
-  std::vector<double> const* _WPAR;
-  // constant values: _nc
-  std::vector<double> const* _DCST;
-
   // number of parameters
   size_t _np;
   // number of constants
@@ -58,6 +36,24 @@ private:
   size_t _nl;
   // number of scenarios
   size_t _ns;
+
+  // DAG of constraints
+  mutable FFGraph* _DAG;
+  // parameters
+  std::vector<FFVar> _FPAR;
+  // constants
+  std::vector<FFVar> _FCST;
+  // controls
+  std::vector<FFVar> _FCON;
+  // functions
+  std::vector<FFVar> _FFCT;
+  
+  // parameter scenarios: _ns x _np
+  std::vector<std::vector<double>> const* _DPAR;
+  // parameter scenario weights: _np
+  std::vector<double> const* _WPAR;
+  // constant values: _nc
+  std::vector<double> const* _DCST;
 
   // control values
   mutable std::vector<double> _DCON;
@@ -97,23 +93,29 @@ public:
 #ifdef MAGNUS__FFNSAMP_CHECK
       assert( dag && con->size() && (ctr || lkh) );
 #endif
-      _DAG  = dag;
-      _FPAR = par;
-      _FCST = cst;
-      _FCON = con;
-      //_FCTR = ctr;
-      //_FLKH = lkh;
-
-      _FFCT.clear();
-      if( ctr ) _FFCT.insert( _FFCT.end(), ctr->cbegin(), ctr->cend() );
-      if( lkh ) _FFCT.insert( _FFCT.end(), *lkh );
-
       _np = par? par->size(): 0;
       _nc = cst? cst->size(): 0;
       _nu = con->size();
       _ng = ctr? ctr->size(): 0;
       _nl = lkh? 1: 0;
-      
+
+      if( _DAG ) delete _DAG;
+      _DAG  = new FFGraph;
+      _DAG->options = dag->options;
+
+      _DAG->insert( dag, *con, _FCON );
+      if( _np ) _DAG->insert( dag, *par, _FPAR );
+      if( _nc ) _DAG->insert( dag, *cst, _FCST );
+
+      _FFCT.clear();
+      _FFCT.reserve( _ng+_nl );
+      if( _ng ) _DAG->insert( dag, *ctr, _FFCT );
+      if( _nl ){
+        FFVar FLKH;
+        _DAG->insert( dag, 1, lkh, &FLKH );
+        _FFCT.push_back( FLKH );
+      }
+
 #ifdef MAGNUS__FFNSAMP_CHECK
       assert( !vcst || vcst->size() == _nc );
 #endif
@@ -130,7 +132,8 @@ public:
   // Default constructor
   FFNSamp
     ( double const& ConfCTR_=0.10, double const& ConfLKH_=0.10 )
-    : FFOp   ( EXTERN   )
+    : FFOp   ( EXTERN ),
+      _DAG   ( nullptr )
     {
       ConfCTR = ConfCTR_;
       ConfLKH = ConfLKH_;
@@ -140,23 +143,31 @@ public:
   FFNSamp
     ( FFNSamp const& Op )
     : FFOp   ( Op ),
-      _DAG   ( Op._DAG ),
-      _FPAR  ( Op._FPAR ),
-      _FCST  ( Op._FCST ),
-      _FCON  ( Op._FCON ),
-      //_FCTR  ( Op._FCTR ),
-      //_FLKH  ( Op._FLKH ),
-      _FFCT  ( Op._FFCT ),
-      _DPAR  ( Op._DPAR ),
-      _WPAR  ( Op._WPAR ),
-      _DCST  ( Op._DCST ),
       _np    ( Op._np ),
       _nc    ( Op._nc ),
       _nu    ( Op._nu ),
       _ng    ( Op._ng ),
       _nl    ( Op._nl ),
-      _ns    ( Op._ns )
-    {}
+      _ns    ( Op._ns ),
+      _DPAR  ( Op._DPAR ),
+      _WPAR  ( Op._WPAR ),
+      _DCST  ( Op._DCST )
+    {
+      _DAG  = new FFGraph;
+      _DAG->options = Op._DAG->options;
+
+      _DAG->insert( Op._DAG, Op._FCON, _FCON );
+      if( _np ) _DAG->insert( Op._DAG, Op._FPAR, _FPAR );
+      if( _nc ) _DAG->insert( Op._DAG, Op._FCST, _FCST );
+      _DAG->insert( Op._DAG, Op._FFCT, _FFCT );
+    }
+
+  // Destructor
+  virtual ~FFNSamp
+    ()
+    {
+      delete _DAG;
+    }
 
   // Define operation
   // Return values:
@@ -291,16 +302,17 @@ const
   std::cout << "CON = " << arma::vec( _DCON.data(), _nu, false ).t();
 #endif
   if( !_np ){
-    if( !_nc ) _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], *_FCON, _DCON );
-    else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], *_FCON, _DCON, *_FCST, *_DCST );
+    if( !_nc ) _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], _FCON, _DCON );
+    else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], _FCON, _DCON, _FCST, *_DCST );
   }
   else if( _ns == 1 ){
-    if( !_nc ) _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], *_FPAR, _DPAR->at(0), *_FCON, _DCON );
-    else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], *_FPAR, _DPAR->at(0), *_FCON, _DCON, *_FCST, *_DCST );
+    if( !_nc ) _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], _FPAR, _DPAR->at(0), _FCON, _DCON );
+    else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], _FPAR, _DPAR->at(0), _FCON, _DCON, _FCST, *_DCST );
   }
   else{
-    if( !_nc ) _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, *_FPAR, *_DPAR, *_FCON, _DCON );
-    else       _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, *_FPAR, *_DPAR, *_FCON, _DCON, *_FCST, *_DCST );
+    //std::cout << "using veval in FFNSamp\n";
+    if( !_nc ) _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, _FPAR, *_DPAR, _FCON, _DCON );
+    else       _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, _FPAR, *_DPAR, _FCON, _DCON, _FCST, *_DCST );
   }
 #ifdef MC__FFNSAMP_DEBUG
   for( size_t s=0; s<(_ns?_ns:1); ++s )

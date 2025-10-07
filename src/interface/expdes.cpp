@@ -25,7 +25,16 @@ pyEXPDES
  .def(
    "setup",
    []( EXPDES& self, size_t const ndxmod )
-     { return self.setup(ndxmod); },
+     {
+       try{
+         return (int)self.setup( ndxmod );
+       }
+       catch( mc::NSFEAS::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
+     },
    py::arg("ndxmod")=0,    
    "setup experiment design problem before solution"
  )
@@ -33,7 +42,9 @@ pyEXPDES
    "evaluate_design",
    []( EXPDES& self, std::list<std::pair<double,std::vector<double>>> const& campaign,
        std::string const& crit, std::vector<double> const& cst )
-     { return self.evaluate_design( campaign, crit, cst ); },
+     {
+       return self.evaluate_design( campaign, crit, cst ); // catches exceptions
+     },
    py::arg("campaign"),
    py::arg("crit"),    
    py::arg("cst")=std::vector<double>(),
@@ -47,7 +58,19 @@ pyEXPDES
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.sample_support( nsam, cst );
+       try{
+         return (int)self.sample_support( nsam, cst );
+       }
+       catch( mc::NSFEAS::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
+       catch( EXPDES::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("nsam"),
    py::arg("cst")=std::vector<double>(),
@@ -62,7 +85,19 @@ pyEXPDES
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.effort_solve( nexp, exact, ini );
+       try{
+         return self.effort_solve( nexp, exact, ini );
+       }
+       catch( GRBException const& ex ){
+         std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+         std::cerr << ex.getMessage() << std::endl;
+         return ex.getErrorCode();
+       }
+       catch( EXPDES::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("nexp"),
    py::arg("exact")=true,
@@ -78,7 +113,14 @@ pyEXPDES
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.gradient_solve( supp, cst, updt );
+       try{
+         return self.gradient_solve( supp, cst, updt );
+       }
+       catch( EXPDES::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("supp"),
    py::arg("cst")=std::vector<double>(),
@@ -94,7 +136,19 @@ pyEXPDES
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.combined_solve( nexp, cst, exact, ini );
+       try{
+         return self.combined_solve( nexp, cst, exact, ini );
+       }
+       catch( GRBException const& ex ){
+         std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+         std::cerr << ex.getMessage() << std::endl;
+         return ex.getErrorCode();
+       }
+       catch( EXPDES::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("nexp"),
    py::arg("cst")=std::vector<double>(),

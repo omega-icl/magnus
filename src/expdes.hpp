@@ -296,28 +296,37 @@ public:
       NOMODEL,	    //!< unspecified model
       BADCONST,	    //!< Unspecified constants
       BADCRIT,      //!< Misspecified design criterion
+      BADNEXP,      //!< Inconsistent campaign size
       INTERN=-33    //!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
     Exceptions( TYPE ierr ) : _ierr( ierr ){}
     //! @brief Inline function returning the error flag
-    int ierr(){ return _ierr; }
+    int ierr
+      ()
+      const
+      { return _ierr; }
     //! @brief Inline function returning the error description
-    std::string what(){
-      switch( _ierr ){
-        case BADSIZE:
-          return "EXPDES::Exceptions  Inconsistent dimensions";
-        case NOMODEL:
-          return "EXPDES::Exceptions  Unspecified model";
-        case BADCONST:
-          return "EXPDES::Exceptions  Unspecified constants";
-        case BADCRIT:
-          return "EXPDES::Exceptions  Misspecified design criterion";
-        case INTERN:
-        default:
-          return "EXPDES::Exceptions  Internal error";
+    std::string what
+      () 
+      const
+      {
+        switch( _ierr ){
+          case BADSIZE:
+            return "EXPDES::Exceptions  Inconsistent dimensions";
+          case NOMODEL:
+            return "EXPDES::Exceptions  Unspecified model";
+          case BADCONST:
+            return "EXPDES::Exceptions  Unspecified constants";
+          case BADCRIT:
+            return "EXPDES::Exceptions  Unspecified constants";
+          case BADNEXP:
+            return "EXPDES::Exceptions  Inconsistent campaign size";
+          case INTERN:
+          default:
+            return "EXPDES::Exceptions  Internal error";
+        }
       }
-    }
   private:
     TYPE _ierr;
   };
@@ -821,7 +830,7 @@ EXPDES::_sample_out
 ( size_t const NSAM, std::ostream& os )
 {
   auto&& tstart = stats.start();
-  int DISPFREQ = (_ne0+NSAM)/20;
+  int DISPFREQ = (_ne0+NSAM > 20? (_ne0+NSAM)/20: 1);
   if( options.DISPLEVEL )
     os << "** GENERATING SUPPORT SAMPLES     |" << std::flush;
 
@@ -1464,6 +1473,7 @@ EXPDES::effort_solve
       break;
 
     case ODIST:
+      if( NEXP > NSUPP ) throw Exceptions( Exceptions::BADNEXP );
       _effort_set_ODist( doe, NEXP, EFF, E0 );
       break;
       

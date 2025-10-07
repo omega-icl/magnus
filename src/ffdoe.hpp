@@ -1782,13 +1782,14 @@ const
 #ifdef MC__FFODISTEFF_TRACE
   std::cout << "FFODISTEff::deriv\n";
 #endif
+
 #ifdef MC__FFODISTEFF_CHECK
   assert( _vOUT && !_vOUT->empty() && nRes == 1 && nVar == _vOUT->back().size()-_vEFFAP->size() );
 #endif
 
 #ifdef MC__FFODISTEFF_USEGRAD
   FFGradODISTEff OpResDer;
-  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _tolOD, _vOUT, _vEFFAP );
+  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _maxSUPP, _tolOD, _vOUT, _vEFFAP );
   FFVar const*const* ppResDer = insert_external_operation( OpResDer, nVar, vVar[0].dag() );
   for( size_t i=0; i<nVar; ++i )
     vDer[0][i] = *ppResDer[i];

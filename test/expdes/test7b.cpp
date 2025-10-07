@@ -18,7 +18,7 @@ int main()
   // Define model
 
   mc::FFGraph DAG;  // DAG describing the model
-  DAG.options.MAXTHREAD = 0; // Use all available CPU cores for DAG evaluation
+  DAG.options.MAXTHREAD = 1; // Use all available CPU cores for DAG evaluation
   
   // Time stages
   size_t const NS = 1;
@@ -195,8 +195,6 @@ int main()
   /////////////////////////////////////////////////////////////////////////
   // Define MBDOE
 
-  size_t const NEXP = 8;
-
   mc::EXPDES DOE;
   DOE.options.CRITERION = mc::EXPDES::ODIST;
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;
@@ -262,24 +260,51 @@ int main()
 //  return 0;
   std::vector<double> YVAR{ 1e-5, 1e-07, 1e2 };
   //std::vector<double> YVAR{ 2.7342e-02, 5.9986e-04, 1.5588e+03};
-  
-  DOE.set_model( Y, YVAR ); // to give output variables about the same weight
-  DOE.set_constraint( G );
-  DOE.setup();
 
-  size_t NUSAM = 64;
-  DOE.sample_support( NUSAM );
-  //DOE.combined_solve( NEXP );
-  DOE.effort_solve( NEXP );//, false );
-  DOE.gradient_solve( DOE.effort(), std::vector<double>(), true );
-  //DOE.effort_solve( 5, true, DOE.effort() );
-  DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
-  DOE.stats.display();
+  try{
+    DOE.set_model( Y, YVAR ); // to give output variables about the same weight
+    DOE.set_constraint( G );
+    DOE.setup();
+
+    size_t NUSAM = 8;
+    DOE.sample_support( NUSAM );
+
+    // Design a campaign with 8 experiments
+    size_t const NEXP = 8;
+    //DOE.combined_solve( NEXP );
+    DOE.effort_solve( NEXP );
+    DOE.gradient_solve( DOE.effort() );
+    DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
+    DOE.stats.display();
   
-  auto campaign = DOE.campaign();
-  DOE.options.CRITERION = mc::EXPDES::ODIST;
-  //DOE.setup();
-  DOE.evaluate_design( campaign, "ODIST" );
- 
+    auto campaign1 = DOE.campaign();
+    DOE.evaluate_design( campaign1, "ODIST" );
+
+    // Design a campaign sequentially with 4+4 experiments
+    DOE.effort_solve( NEXP/2 );
+    DOE.gradient_solve( DOE.effort() );
+
+    auto campaign2 = DOE.campaign();
+    DOE.add_prior_campaign( campaign2 );
+
+    DOE.sample_support( NUSAM );
+
+    DOE.effort_solve( NEXP/2 );
+    DOE.gradient_solve( DOE.effort() );
+
+    auto campaign3 = DOE.campaign();
+    DOE.evaluate_design( campaign3, "ODIST" );
+  }
+
+  catch( GRBException const& ex ){
+    std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+    std::cerr << ex.getMessage() << std::endl;
+  }
+
+  catch( mc::EXPDES::Exceptions const& ex ){
+    std::cerr << "Error code =" << ex.ierr() << std::endl;
+    std::cerr << ex.what() << std::endl;
+  }
+
   return 0;
 }

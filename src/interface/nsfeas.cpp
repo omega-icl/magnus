@@ -35,7 +35,14 @@ pyNSFEAS
        std::cout,                                // std::ostream&
        py::module_::import("sys").attr("stdout") // Python output
      );
-     return self.sample( vcst, reset );
+     try{
+       return self.sample( vcst, reset );
+     }
+     catch( NSFEAS::Exceptions const& ex ){
+       std::cerr << "Error code = " << ex.ierr() << std::endl;
+       std::cerr << ex.what() << std::endl;
+       return ex.ierr();
+     }
    },
    py::arg("cst") = std::vector<double>(),
    py::arg("reset") = true,

@@ -131,8 +131,10 @@ private:
   mutable FFSubgraph                           _sgOUT;
   // Work storage
   mutable std::vector<double>                  _wkD;
+#ifdef MC__FFMLE_USE_THREADS
   // Thread storage
   mutable std::vector<FFGraph::Worker<double>> _wkThd;
+#endif
 
   // Evaluation of MLE criterion from output values
   void _MLEval
@@ -294,8 +296,10 @@ private:
   mutable FFSubgraph                                      _sgOUT;
   // Work storage
   mutable std::vector<fadbad::F<double>>                  _wkFD;
+#ifdef MC__FFMLE_USE_THREADS
   // Thread storage
   mutable std::vector<FFGraph::Worker<fadbad::F<double>>> _wkFThd;
+#endif
 
   // Evaluation of MLE derivatives from output values
   void _MLEder
@@ -641,10 +645,14 @@ const
   std::cout << "p = " << arma::vec( _DPAR.data(), _np, false );
 #endif
 
-  if( _CST.empty() )
-    _DAG->veval( _sgOUT, _wkD, _wkThd, _OUT, _DOUT, _CON, _DCON, _PAR, _DPAR );
-  else
-    _DAG->veval( _sgOUT, _wkD, _wkThd, _OUT, _DOUT, _CON, _DCON, _PAR, _DPAR, _CST, *_DCST );
+#ifdef MC__FFMLE_USE_THREADS
+  if( _nc ) _DAG->veval( _sgOUT, _wkD, _wkThd, _OUT, _DOUT, _CON, _DCON, _PAR, _DPAR, _CST, *_DCST );
+  else      _DAG->veval( _sgOUT, _wkD, _wkThd, _OUT, _DOUT, _CON, _DCON, _PAR, _DPAR );
+#else
+  for( size_t e=0; e<_ne; ++e )
+    if( _nc ) _DAG->eval( _sgOUT, _wkD, _OUT, _DOUT[e], _CON, _DCON[e], _PAR, _DPAR, _CST, *_DCST );
+    else      _DAG->eval( _sgOUT, _wkD, _OUT, _DOUT[e], _CON, _DCON[e], _PAR, _DPAR );
+#endif
 #ifdef MC__FFMLE_DEBUG
   for( size_t e=0; e<_ne; ++e )
     std::cout << "y[" << e << "] = " << arma::vec( _DOUT[e].data(), _ny, false );
@@ -701,10 +709,15 @@ const
   for( size_t p=0; p<_np; ++p )
     _FDPAR[p].x() = vVar[p]; // does not change differential variables
 
-  if( _CST.empty() )
-    _DAG->veval( _sgOUT, _wkFD, _wkFThd, _OUT, _FDOUT, _CON, _FDCON, _PAR, _FDPAR );
-  else
-    _DAG->veval( _sgOUT, _wkFD, _wkFThd, _OUT, _FDOUT, _CON, _FDCON, _PAR, _FDPAR, _CST, _FDCST );
+#ifdef MC__FFMLE_USE_THREADS
+  if( _nc ) _DAG->veval( _sgOUT, _wkFD, _wkFThd, _OUT, _FDOUT, _CON, _FDCON, _PAR, _FDPAR, _CST, _FDCST );
+  else      _DAG->veval( _sgOUT, _wkFD, _wkFThd, _OUT, _FDOUT, _CON, _FDCON, _PAR, _FDPAR );
+#else
+  for( size_t e=0; e<_ne; ++e )
+    if( _nc ) _DAG->eval( _sgOUT, _wkFD, _OUT, _FDOUT[e], _CON, _FDCON[e], _PAR, _FDPAR, _CST, _FDCST );
+    else      _DAG->eval( _sgOUT, _wkFD, _OUT, _FDOUT[e], _CON, _FDCON[e], _PAR, _FDPAR );
+#endif
+     
 #ifdef MC__FFGRADMLE_DEBUG
   for( size_t e=0; e<_ne; ++e ){
     for( size_t k=0; k<_ny; ++k ){

@@ -261,9 +261,9 @@ public:
     //! @brief Constructor for error <a>ierr</a>
     Exceptions( TYPE ierr ) : _ierr( ierr ){}
     //! @brief Inline function returning the error flag
-    int ierr(){ return _ierr; }
+    int ierr() const { return _ierr; }
     //! @brief Inline function returning the error description
-    std::string what(){
+    std::string what() const {
       switch( _ierr ){
         case BADSIZE:
           return "MODISCR::Exceptions  Inconsistent dimensions";
@@ -593,7 +593,7 @@ MODISCR::_sample_out
 ( size_t const NSAM, std::ostream& os )
 {
   auto&& tstart = stats.start();
-  int DISPFREQ = (_ne0+NSAM)/20;
+  int DISPFREQ = (_ne0+NSAM > 20? (_ne0+NSAM)/20: 1);
   if( options.DISPLEVEL )
     os << "** GENERATING SUPPORT SAMPLES     |" << std::flush;
 

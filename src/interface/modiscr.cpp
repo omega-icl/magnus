@@ -25,14 +25,25 @@ pyMODISCR
  .def(
    "setup",
    []( MODISCR& self )
-     { return self.setup(); },
+     {
+       try{
+         return (int)self.setup();
+       }
+       catch( MODISCR::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
+     },
    "setup experiment design problem before solution"
  )
  .def(
    "evaluate_design",
    []( MODISCR& self, std::list<std::pair<double,std::vector<double>>> const& campaign,
        std::string const& crit, std::vector<double> const& cst )
-     { return self.evaluate_design( campaign, crit, cst ); },
+     {
+       return self.evaluate_design( campaign, crit, cst ); // catches exceptions
+     },
    py::arg("campaign"),
    py::arg("crit"),    
    py::arg("cst")=std::vector<double>(),
@@ -46,7 +57,14 @@ pyMODISCR
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.sample_support( nsam, cst );
+       try{
+         return (int)self.sample_support( nsam, cst );
+       }
+       catch( MODISCR::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
       },
    py::arg("nsam"),
    py::arg("cst")=std::vector<double>(),
@@ -61,7 +79,19 @@ pyMODISCR
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.effort_solve( nexp, exact, ini );
+       try{
+         return self.effort_solve( nexp, exact, ini );
+       }
+       catch( GRBException const& ex ){
+         std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+         std::cerr << ex.getMessage() << std::endl;
+         return ex.getErrorCode();
+       }
+       catch( MODISCR::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("nexp"),
    py::arg("exact")=true,
@@ -77,7 +107,14 @@ pyMODISCR
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.gradient_solve( supp, cst, updt );
+       try{
+         return self.gradient_solve( supp, cst, updt );
+       }
+       catch( MODISCR::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("supp"),
    py::arg("cst")=std::vector<double>(),
@@ -93,7 +130,19 @@ pyMODISCR
          std::cout,                                // std::ostream&
          py::module_::import("sys").attr("stdout") // Python output
        );
-       return self.combined_solve( nexp, cst, exact, ini );
+       try{
+         return self.combined_solve( nexp, cst, exact, ini );
+       }
+       catch( GRBException const& ex ){
+         std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+         std::cerr << ex.getMessage() << std::endl;
+         return ex.getErrorCode();
+       }
+       catch( MODISCR::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
      },
    py::arg("nexp"),
    py::arg("cst")=std::vector<double>(),

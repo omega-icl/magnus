@@ -295,7 +295,7 @@ pyMBDOE
    "prior campaign: [ {effort0, [experiment0]}, {effort1, [experiment1]}, ... ]"
  )
  .def(
-   "set_prior_campaign",
+   "reset_prior_campaign",
    []( BASE_MBDOE& self )
      { self.reset_prior_campaign(); },
    "reset prior campaign"
