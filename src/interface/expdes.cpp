@@ -105,6 +105,34 @@ pyEXPDES
    "solve effort-based experiment design for support selection"
  )
  .def(
+   "effort_solve",
+   []( EXPDES& self, std::vector<size_t> const& nexp, bool const exact, 
+     std::map<size_t,double> const& ini )
+     {
+       py::scoped_ostream_redirect stream(
+         std::cout,                                // std::ostream&
+         py::module_::import("sys").attr("stdout") // Python output
+       );
+       try{
+         return self.effort_solve( nexp, exact, ini );
+       }
+       catch( GRBException const& ex ){
+         std::cerr << "Error code = " << ex.getErrorCode() << std::endl;
+         std::cerr << ex.getMessage() << std::endl;
+         return ex.getErrorCode();
+       }
+       catch( EXPDES::Exceptions const& ex ){
+         std::cerr << "Error code = " << ex.ierr() << std::endl;
+         std::cerr << ex.what() << std::endl;
+         return ex.ierr();
+       }
+     },
+   py::arg("nexp"),
+   py::arg("exact")=true,
+   py::arg("ini")=std::map<size_t,double>(),
+   "solve effort-based experiment design for support selection"
+ )
+ .def(
    "gradient_solve",
    []( EXPDES& self, std::map<size_t,double> const& supp, std::vector<double> const& cst,
       bool const updt )

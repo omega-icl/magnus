@@ -206,7 +206,7 @@ int main()
   DOE.options.MINLPSLV.MIPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.MIPSLV.INTEGRALITYFOCUS = 0;
   DOE.options.MINLPSLV.MIPSLV.INTFEASTOL = 1e-9;
-  DOE.options.MINLPSLV.MIPSLV.OUTPUTFILE = "";//"test0b.lp";
+  DOE.options.MINLPSLV.MIPSLV.OUTPUTFILE = "test7b.lp";
   DOE.options.MINLPSLV.NLPSLV.GRADMETH  = DOE.options.MINLPSLV.NLPSLV.FSYM;
   DOE.options.NLPSLV.DISPLEVEL   = 1;
   DOE.options.NLPSLV.GRADCHECK   = 0;
@@ -266,34 +266,37 @@ int main()
     DOE.set_constraint( G );
     DOE.setup();
 
-    size_t NUSAM = 8;
+    size_t NUSAM = 256;
     DOE.sample_support( NUSAM );
 
-    // Design a campaign with 8 experiments
-    size_t const NEXP = 8;
+    // Design a campaign with 4*4 experiments
+    size_t const NEXP = 16;
     //DOE.combined_solve( NEXP );
-    DOE.effort_solve( NEXP );
+    DOE.effort_solve( {NEXP/4, NEXP/4, NEXP/4, NEXP/4} );
+    //DOE.effort_solve( NEXP );
     DOE.gradient_solve( DOE.effort() );
-    DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
+//    DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
     DOE.stats.display();
-  
-    auto campaign1 = DOE.campaign();
-    DOE.evaluate_design( campaign1, "ODIST" );
+//  
+//    auto campaign1 = DOE.campaign();
+//    DOE.evaluate_design( campaign1, "ODIST" );
 
-    // Design a campaign sequentially with 4+4 experiments
-    DOE.effort_solve( NEXP/2 );
-    DOE.gradient_solve( DOE.effort() );
+//    // Design a campaign sequentially with 4+4 experiments
+//    DOE.sample_support( NUSAM );
 
-    auto campaign2 = DOE.campaign();
-    DOE.add_prior_campaign( campaign2 );
+//    DOE.effort_solve( NEXP/2 );
+//    DOE.gradient_solve( DOE.effort() );
 
-    DOE.sample_support( NUSAM );
+//    auto campaign2 = DOE.campaign();
+//    DOE.add_prior_campaign( campaign2 );
 
-    DOE.effort_solve( NEXP/2 );
-    DOE.gradient_solve( DOE.effort() );
+//    DOE.sample_support( NUSAM );
 
-    auto campaign3 = DOE.campaign();
-    DOE.evaluate_design( campaign3, "ODIST" );
+//    DOE.effort_solve( NEXP/2 );
+//    DOE.gradient_solve( DOE.effort() );
+
+//    auto campaign3 = DOE.campaign();
+//    DOE.evaluate_design( campaign3, "ODIST" );
   }
 
   catch( GRBException const& ex ){

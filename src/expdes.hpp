@@ -393,10 +393,22 @@ public:
      std::map<size_t,double> const& EIni=std::map<size_t,double>(),
      std::ostream& os=std::cout );
 
+  //! @brief Solve effort-based exact experiment design with increasing number of supports <a>vNEXP</a>
+  int effort_solve
+    ( std::vector<size_t> const& vNEXP, bool const exact=true,
+      std::map<size_t,double> const& EIni=std::map<size_t,double>(),
+      std::ostream& os=std::cout );
+
   //! @brief Solve gradient-based experiment design for refinement of <a>EOpt</a> supports 
   int gradient_solve
     ( std::map<size_t,double> const& EOpt, std::vector<double> const& vcst=std::vector<double>(),
       bool const update=true, std::ostream& os=std::cout );
+
+  //! @brief Solve gradient-based experiment design for refinement of <a>EOpt</a> supports 
+  int gradient_solve
+    ( std::list<std::pair<double,std::vector<double>>> const& Campaign,
+      std::vector<double> const& vcst=std::vector<double>(), bool const update=true, 
+      std::ostream& os=std::cout );
 
   //! @brief Solve combined effort- and gradient-based experiment design with <a>NEXP</a> supports 
   int combined_solve
@@ -510,22 +522,24 @@ protected:
 
   //! @brief Set Bayes Risk criterion in effort-based MINLP model
   void _effort_set_BRisk
-    ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF )
+    ( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF )
     const;
 
   //! @brief Set output distance criterion in effort-based MINLP model
   void _effort_set_ODist
-    ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF, std::vector<double>& E0 )
+    ( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF,
+      std::vector<double>& E0, std::vector<I>& EBND )
     const;
 
   //! @brief Set FIM-based risk-neutral criterion in effort-based MINLP model
   void _effort_set_FIMNeutral
-    ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF )
+    ( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF )
     const;
 
   //! @brief Set FIM-based risk-averse criterion in effort-based MINLP model
   void _effort_set_FIMAverse
-    ( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF, std::vector<double>& E0 )
+    ( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF,
+      std::vector<double>& E0, std::vector<I>& EBND )
     const;
 
   //! @brief Evaluate constraints
@@ -577,6 +591,12 @@ protected:
   void _refine_set_FIMAverse
     ( NLP& doeref, std::map<size_t,double> const& EOpt, std::vector<FFVar> const& UTOT,
       std::vector<double>& UTOT0, std::ostream& os );
+
+  //! @brief Run gradient-based refinement
+  int _gradient_solve
+    ( std::map<size_t,double> const& EOpt, std::vector<double>& UTOT0,
+      std::vector<double> const& UTOTLB, std::vector<double> const& UTOTUB,
+      std::vector<double> const& vcst, bool const update, std::ostream& os );
 
   //! @brief Generate samples for refined supports
   bool _update_supports
@@ -1325,11 +1345,11 @@ EXPDES::combined_solve
 inline
 void
 EXPDES::_effort_set_BRisk
-( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF )
+( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF )
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );  
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - NEXP );  
 
   FFBREff OpBRCrit;
   doe.set_obj( BASE_OPT::MIN, OpBRCrit( EFF, &_vOUTSAM, &_vEFFAP ) );
@@ -1338,11 +1358,12 @@ const
 inline
 void
 EXPDES::_effort_set_ODist
-( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF, std::vector<double>& E0 )
+( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF,
+  std::vector<double>& E0, std::vector<I>& EBND )
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );  
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - NEXP );  
 
   size_t const NSUPP = _vCONSAM.size();
   //std::vector<FFVar> SEL( NSUPP*(NSUPP-1)/2 );
@@ -1350,9 +1371,13 @@ const
   for( auto& Sk : SEL )
     Sk.set( _dagdoe );
   doe.add_var( SEL, 0e0, 1e0 ); // auxiliary continuous
+  E0.insert( E0.end(), NSUPP, 0e0 );
+  if( !EBND.empty() ) EBND.insert( EBND.end(), NSUPP, I(0e0,1e0) );
 
   FFVar OD( _dagdoe );
   doe.add_var( OD, 0e0 );
+  E0.insert( E0.end(), 1, 0e0 );
+  if( !EBND.empty() ) EBND.insert( EBND.end(), 1, I(0e0,BASE_OPT::INF) );
 
   FFODISTEff OpODISTEff;
   //std::vector<FFVar> SELi( NSUPP );
@@ -1362,8 +1387,8 @@ const
     //SELi[i] = 0.;
     //for( size_t j=i+1; j<NSUPP; j++ )
     //  SELi[j] = SEL[j*(j-1)/2+i];
-    //FFVar vODISTEff = OpODISTEff( SELi, i, NEXP, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
-    FFVar vODISTEff = OpODISTEff( SEL, i, NEXP, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
+    //FFVar vODISTEff = OpODISTEff( SELi, NEXP, i, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
+    FFVar vODISTEff = OpODISTEff( SEL, NEXP, i, options.IDWTOL, &_vOUTSAM, &_vEFFAP );
     doe.add_ctr( BASE_OPT::GE, OD - vODISTEff + (1-SEL[i]) / options.IDWTOL );
     doe.add_ctr( BASE_OPT::GE, SEL[i] - EFF[i] );
     //doe.add_ctr( BASE_OPT::GE, OD - vODISTEff );
@@ -1373,17 +1398,16 @@ const
 
   doe.set_obj( BASE_OPT::MIN, OD );
 
-  E0.insert( E0.end(), NSUPP+1, 0e0 );
 }
 
 inline
 void
 EXPDES::_effort_set_FIMNeutral
-( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF )
+( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF )
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - NEXP );
 
   FFFIMEff OpFIMEff;
   FFVar const*const* ppFIMEff = OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP );
@@ -1400,11 +1424,12 @@ const
 inline
 void
 EXPDES::_effort_set_FIMAverse
-( MINLP& doe, size_t const NEXP, std::vector<FFVar> const& EFF, std::vector<double>& E0 )
+( MINLP& doe, FFVar const& NEXP, std::vector<FFVar> const& EFF,
+  std::vector<double>& E0, std::vector<I>& EBND )
 const
 {
   FFLin<I> Sum;
-  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - (int)NEXP );
+  doe.add_ctr( BASE_OPT::EQ, Sum( EFF, 1. ) - NEXP );
 
   FFFIMEff OpFIMEff;
   FFVar const*const* ppFIMEff = OpFIMEff( EFF, &_vFIMSAM, &_vEFFAP );
@@ -1417,17 +1442,158 @@ const
 
   FFVar VaR( _dagdoe );
   doe.add_var( VaR );//, -1e2, 1e2 );
+  E0.insert( E0.end(), 1, 0e0 );
+  if( !EBND.empty() ) EBND.insert( EBND.end(), 1, I(-BASE_OPT::INF,BASE_OPT::INF) );
 
   std::vector<FFVar> DELTA( NUNC );
   for( auto& Dk : DELTA )
     Dk.set( _dagdoe );
   doe.add_var( NUNC, DELTA.data(), 0e0 );//, 1e2 );
+  E0.insert( E0.end(), NUNC, 0e0 );
+  if( !EBND.empty() ) EBND.insert( EBND.end(), NUNC, I(0e0,BASE_OPT::INF) );
 
   doe.set_obj( BASE_OPT::MAX, VaR - Sum( DELTA, _vPARWEI ) / options.CVARTHRES );
   for( size_t s=0; s<NUNC; s++ )
     doe.add_ctr( BASE_OPT::LE, VaR - DELTA[s] - *(ppFIMEff[s]) );
 
-  E0.insert( E0.end(), NUNC+1, 0e0 );
+}
+
+inline
+int
+EXPDES::effort_solve
+( std::vector<size_t> const& vNEXP, bool const exact, std::map<size_t,double> const& EIni,
+  std::ostream& os )
+{
+  if( vNEXP.empty() ) throw Exceptions( Exceptions::BADNEXP );
+
+  auto&& t_slvmip = stats.start();
+
+  // Define MINLP DAG
+  delete _dagdoe; _dagdoe = new DAG;
+
+  FFVar NOEXP = _dagdoe->add_var( "NEXP" );
+  double DNEXP = vNEXP.front();
+
+  size_t const NSUPP = _vCONSAM.size();
+  std::vector<FFVar> EFF( NSUPP );
+  for( auto& Ek : EFF )
+    Ek.set( _dagdoe );
+  std::vector<double> E0;
+  if( EIni.empty() )
+    E0.assign( NSUPP, DNEXP/NSUPP );
+  else{
+    E0.assign( NSUPP, 0e0 );
+    for( auto const& [ndx,eff] : EIni )
+      E0[ndx] = eff;
+  }
+  
+  // Total experiment count and default bounds
+  size_t TOTEXP = std::accumulate( std::next(vNEXP.cbegin()), vNEXP.cend(), vNEXP.front() );
+  std::vector<I> EBND( NSUPP, I(0e0,TOTEXP) );
+
+  // Update external operations
+  FFDOEBase::set_weighting( _vPARWEI );
+  FFDOEBase::set_scaling( _mPARSCA );
+  FFDOEBase::set_noise( _vOUTVAR );
+  FFDOEBase::parsubset = &_sPARSEL;
+  FFDOEBase::type = options.CRITERION;
+
+  // Convex MINLP optimization
+  MINLP doe;
+  doe.options = options.MINLPSLV;
+  doe.set_dag( _dagdoe );
+  doe.set_var( EFF, 0e0, TOTEXP, exact );
+  doe.set_par( NOEXP );
+
+  switch( options.CRITERION ){
+    case BRISK:
+      _effort_set_BRisk( doe, NOEXP, EFF );
+      break;
+
+    case ODIST:
+      if( TOTEXP > NSUPP ) throw Exceptions( Exceptions::BADNEXP );
+      _effort_set_ODist( doe, NOEXP, EFF, E0, EBND );
+      break;
+      
+    case AOPT:
+    case DOPT:
+    case EOPT:
+    default:
+      switch( options.RISK){
+        case Options::NEUTRAL:
+          _effort_set_FIMNeutral( doe, NOEXP, EFF );
+          break;
+        case Options::AVERSE:
+          _effort_set_FIMAverse( doe, NOEXP, EFF, E0, EBND );
+          break;
+      }
+      break;
+  }
+  
+  doe.setup();
+  
+  bool first = true;
+  for( auto const& NEXP : vNEXP ){
+    // Update bounds and initial guess
+    if( !first ){
+      size_t isupp = 0;
+      for( auto const& Ek : doe.get_incumbent().x ){
+        if( isupp >= NSUPP )
+          break;
+        if( Ek > 1e-3 ){
+          E0[isupp]   = Ek;
+          EBND[isupp] = Ek;
+        }
+        else{
+          E0[isupp]   = (double)NEXP/(double)NSUPP;
+          EBND[isupp] = I(0,NEXP);
+        }
+        ++isupp;
+      }
+      DNEXP += NEXP;
+
+    }
+    first = false;
+
+    //doe.optimize( E0.data(), EBND.data(), &DNEXP );
+    //doe.optimize( E0.data(), EBND.data(), &DNEXP, effort_apportion );
+    doe.optimize( E0.data(), EBND.data(), &DNEXP, effort_rounding );
+
+    if( doe.get_status() != MINLP::SUCCESSFUL )
+      break; 
+  }
+  
+  if( options.DISPLEVEL > 1 )
+    doe.stats.display();
+
+  _EOpt.clear();
+  _SOpt.clear();
+  _ROpt.clear();
+  _VOpt = BASE_OPT::BASE_OPT::INF;
+  if( doe.get_status() == MINLP::SUCCESSFUL 
+   || doe.get_status() == MINLP::INTERRUPTED ){
+    size_t isupp = 0;
+    for( auto const& Ek : doe.get_incumbent().x ){
+      if( isupp >= NSUPP ){
+        _ROpt.push_back( Ek );
+      }
+      else if( Ek > 1e-3 ){
+        _EOpt[isupp] = Ek;
+        _SOpt[isupp] = _vCONSAM[isupp];
+      }
+      ++isupp;
+    }
+    _VOpt = doe.get_incumbent().f[0];
+  }
+
+  if( options.DISPLEVEL )
+    if( exact ) _display_design( "EFFORT-BASED EXACT DESIGN", _VOpt, _EOpt, _SOpt, os ); 
+    else        _display_design( "EFFORT-BASED CONTINUOUS DESIGN", _VOpt, _EOpt, _SOpt, os ); 
+
+  stats.walltime_slvmip += stats.lapse( t_slvmip );
+  stats.walltime_all    += stats.lapse( t_slvmip );
+  
+  return doe.get_status();
 }
 
 inline
@@ -1441,10 +1607,11 @@ EXPDES::effort_solve
   // Define MINLP DAG
   delete _dagdoe; _dagdoe = new DAG;
 
+  FFVar NOEXP = _dagdoe->add_var( "NEXP" );
+  double DNEXP = NEXP;
+  
   size_t const NSUPP = _vCONSAM.size();
-  std::vector<FFVar> EFF( NSUPP );
-  for( auto& Ek : EFF )
-    Ek.set( _dagdoe );
+  std::vector<FFVar> EFF = _dagdoe->add_vars( NSUPP, "EFF" );
   std::vector<double> E0;
   if( EIni.empty() )
     E0.assign( NSUPP, (double)NEXP/(double)NSUPP );
@@ -1453,7 +1620,8 @@ EXPDES::effort_solve
     for( auto const& [ndx,eff] : EIni )
       E0[ndx] = eff;
   }
-  
+  std::vector<I> EBND;
+    
   // Update external operations
   FFDOEBase::set_weighting( _vPARWEI );
   FFDOEBase::set_scaling( _mPARSCA );
@@ -1466,15 +1634,16 @@ EXPDES::effort_solve
   doe.options = options.MINLPSLV;
   doe.set_dag( _dagdoe );
   doe.set_var( EFF, 0e0, NEXP, exact );
+  doe.set_par( NOEXP );
 
   switch( options.CRITERION ){
     case BRISK:
-      _effort_set_BRisk( doe, NEXP, EFF );
+      _effort_set_BRisk( doe, NOEXP, EFF );
       break;
 
     case ODIST:
       if( NEXP > NSUPP ) throw Exceptions( Exceptions::BADNEXP );
-      _effort_set_ODist( doe, NEXP, EFF, E0 );
+      _effort_set_ODist( doe, NOEXP, EFF, E0, EBND );
       break;
       
     case AOPT:
@@ -1483,19 +1652,19 @@ EXPDES::effort_solve
     default:
       switch( options.RISK){
         case Options::NEUTRAL:
-          _effort_set_FIMNeutral( doe, NEXP, EFF );
+          _effort_set_FIMNeutral( doe, NOEXP, EFF );
           break;
         case Options::AVERSE:
-          _effort_set_FIMAverse( doe, NEXP, EFF, E0 );
+          _effort_set_FIMAverse( doe, NOEXP, EFF, E0, EBND );
           break;
       }
       break;
   }
   
   doe.setup();
-  //doe.optimize( E0.data() );
-  //doe.optimize( E0.data(), nullptr, nullptr, effort_apportion );
-  doe.optimize( E0.data(), nullptr, nullptr, effort_rounding );
+  //doe.optimize( E0.data(), nullptr, &DNEXP );
+  //doe.optimize( E0.data(), nullptr, &DNEXP, effort_apportion );
+  doe.optimize( E0.data(), nullptr, &DNEXP, effort_rounding );
 
   if( options.DISPLEVEL > 1 )
     doe.stats.display();
@@ -2161,19 +2330,39 @@ EXPDES::_refine_set_FIMAverse
 inline
 int
 EXPDES::gradient_solve
+( std::list<std::pair<double,std::vector<double>>> const& Campaign,
+  std::vector<double> const& vcst, bool const update, std::ostream& os )
+{
+  // Initial guess and control bounds
+  size_t const NSUP  = Campaign.size();
+  size_t const NUTOT = _nu * NSUP;
+  std::vector<double> UTOT0, UTOTLB, UTOTUB;
+  UTOT0.reserve(NUTOT);
+  UTOTLB.reserve(NUTOT);
+  UTOTUB.reserve(NUTOT);
+  std::map<size_t,double> EOpt;
+  size_t ieff = 0;
+  for( auto const& [eff,supp] : Campaign ){
+    EOpt[ieff++] = eff;
+    UTOT0.insert( UTOT0.end(), supp.cbegin(), supp.cend() );
+    UTOTLB.insert( UTOTLB.end(), _vCONLB.cbegin(), _vCONLB.cend() );
+    UTOTUB.insert( UTOTUB.end(), _vCONUB.cbegin(), _vCONUB.cend() );
+  }
+
+  // Perform optimisation and update
+  return _gradient_solve( EOpt, UTOT0, UTOTLB, UTOTUB, vcst, update, os );
+}
+
+inline
+int
+EXPDES::gradient_solve
 ( std::map<size_t,double> const& EOpt, std::vector<double> const& vcst,
   bool const update, std::ostream& os )
 {
-  auto&& t_slvnlp = stats.start();
-
-  // Define NLP DAG
-  delete _dagdoe; _dagdoe = new DAG;
-  
-  _EOpt = EOpt;
-  size_t const NSUP = _EOpt.size();
+  // Initial guess and control bounds 
+  //_EOpt = EOpt;
+  size_t const NSUP = EOpt.size();
   size_t const NUTOT = _nu * NSUP;
-  std::vector<FFVar> UTOT = _dagdoe->add_vars(NUTOT,"C");  // Concatenated experimental controls
-
   std::vector<double> UTOT0, UTOTLB, UTOTUB;
   UTOT0.reserve(NUTOT);
   UTOTLB.reserve(NUTOT);
@@ -2189,6 +2378,27 @@ EXPDES::gradient_solve
     UTOTLB.insert( UTOTLB.end(), _vCONLB.cbegin(), _vCONLB.cend() );
     UTOTUB.insert( UTOTUB.end(), _vCONUB.cbegin(), _vCONUB.cend() );
   }
+
+  // Perform optimisation and update
+  return _gradient_solve( EOpt, UTOT0, UTOTLB, UTOTUB, vcst, update, os );
+}
+
+inline
+int
+EXPDES::_gradient_solve
+( std::map<size_t,double> const& EOpt, std::vector<double>& UTOT0,
+  std::vector<double> const& UTOTLB, std::vector<double> const& UTOTUB,
+  std::vector<double> const& vcst, bool const update, std::ostream& os )
+{
+  auto&& t_slvnlp = stats.start();
+
+  // Define NLP DAG
+  delete _dagdoe; _dagdoe = new DAG;
+  
+  //_EOpt = EOpt;
+  size_t const NSUP = EOpt.size();
+  size_t const NUTOT = _nu * NSUP;
+  std::vector<FFVar> UTOT = _dagdoe->add_vars(NUTOT,"C");  // Concatenated experimental controls
 
   // Update constants
   if( vcst.size() && vcst.size() == _nc ) _vCSTVAL = vcst;
@@ -2209,11 +2419,11 @@ EXPDES::gradient_solve
 
   switch( options.CRITERION ){
     case BRISK:
-      _refine_set_BRisk( doeref, _EOpt, UTOT, UTOT0, os );
+      _refine_set_BRisk( doeref, EOpt, UTOT, UTOT0, os );
       break;
       
     case ODIST:
-      _refine_set_ODist( doeref, _EOpt, UTOT, UTOT0, os );
+      _refine_set_ODist( doeref, EOpt, UTOT, UTOT0, os );
       break;
       
     case AOPT:
@@ -2222,10 +2432,10 @@ EXPDES::gradient_solve
     default:
       switch( options.RISK){
         case Options::NEUTRAL:
-          _refine_set_FIMNeutral( doeref, _EOpt, UTOT, UTOT0, os );
+          _refine_set_FIMNeutral( doeref, EOpt, UTOT, UTOT0, os );
           break;
         case Options::AVERSE:
-          _refine_set_FIMAverse( doeref, _EOpt, UTOT, UTOT0, os );
+          _refine_set_FIMAverse( doeref, EOpt, UTOT, UTOT0, os );
           break;
       }
       break;
@@ -2239,25 +2449,28 @@ EXPDES::gradient_solve
        << "#  STATIONARY: " << doeref.is_stationary( 1e-6 ) << std::endl
        << std::endl;
 
-  if( update ){
-    _SOpt.clear();
-    _VOpt = 0./0.;
- 
+  //if( update ){
     if( doeref.get_status() == NLP::SUCCESSFUL
      || doeref.get_status() == NLP::FAILURE
      || doeref.get_status() == NLP::INTERRUPTED ){
+      std::map<size_t,std::vector<double>> SOpt;
       double const* dC = doeref.solution().x.data();
-      for( auto const& [ndx,eff] : _EOpt ){
-        _SOpt[ndx] = std::vector<double>( dC, dC+_nu );
+      for( auto const& [ndx,eff] : EOpt ){
+        SOpt[ndx] = std::vector<double>( dC, dC+_nu );
         dC += _nu;
       }
-      _update_supports( _EOpt, _SOpt, os );
+      _update_supports( EOpt, SOpt, os );
       _VOpt = doeref.solution().f[0];
       size_t const NEXTRA = doeref.solution().x.size() - NUTOT;
       if( NEXTRA > 0 )
         _ROpt.assign( dC, dC+NEXTRA );
     }
-  }
+    else{
+      _EOpt.clear();
+      _SOpt.clear();
+      _VOpt = 0./0.;
+    }
+  //}
 
   if( options.DISPLEVEL )
     _display_design( "GRADIENT-BASED REFINED DESIGN", _VOpt, _EOpt, _SOpt, os ); 
@@ -2278,7 +2491,7 @@ const
 {
   os << "** " << title << ": ";
 
-  if( eff.empty() ){
+  if( eff.empty() || supp.empty() ){
      os << " FAILED" << std::endl;
      return;
   } 

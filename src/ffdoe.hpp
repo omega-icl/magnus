@@ -14,7 +14,6 @@
 #define MC__FFBRCRIT_LOG
 #undef  MC__FFDCRIT_EIG
 #define MC__FFFIMCrit_CHECK
-#undef  MC__FFODISTEFF_USEGRAD
 
 namespace mc
 {
@@ -1296,9 +1295,6 @@ protected:
   // Reference support
   size_t _ndxSUPP;
 
-  // Maximium number of selected supports
-  size_t _maxSUPP;
-
   // Tolerance in IDW function
   double _tolOD;
 
@@ -1325,7 +1321,6 @@ public:
   FFBaseODISTEff
     ( FFBaseODISTEff const& Op )
     : _ndxSUPP( Op._ndxSUPP ),
-      _maxSUPP( Op._maxSUPP ),
       _tolOD( Op._tolOD ),
       _vOUT( Op._vOUT ),
       _vEFFAP( Op._vEFFAP )
@@ -1333,14 +1328,14 @@ public:
 
   // Set internal fields
   void set
-    ( size_t const ndxSUPP, size_t const maxSUPP, double const& tolOD,
-      std::vector<std::vector<arma::vec>> const* vOUT, std::vector<double> const* vEFFAP )
+    ( size_t const ndxSUPP, double const& tolOD,
+      std::vector<std::vector<arma::vec>> const* vOUT, 
+      std::vector<double> const* vEFFAP )
     {
 #ifdef MC__FFODISTEFF_CHECK
       assert( vOUT && vEFFAP );
 #endif
       _ndxSUPP = ndxSUPP;
-      _maxSUPP = maxSUPP;
       _tolOD   = tolOD;
       _vOUT    = vOUT;
       _vEFFAP  = vEFFAP;
@@ -1368,14 +1363,14 @@ public:
 
   // Define operation
   FFVar& operator()
-    ( std::vector<FFVar> const& vVar, size_t const ndxSUPP, size_t const maxSUPP, double const& tolOD,
+    ( std::vector<FFVar> const& vVar, FFVar const& maxSUPP, size_t const ndxSUPP, double const& tolOD,
       std::vector<std::vector<arma::vec>> const* vOUT, std::vector<double> const* vEFFAP )
     {
 #ifdef MC__FFODISTEFF_CHECK
       assert( vOUT && vEFFAP );
 #endif
-      FFBaseODISTEff::set( ndxSUPP, maxSUPP, tolOD, vOUT, vEFFAP );
-      return **insert_external_operation( *this, 1, vVar.size(), vVar.data() );
+      FFBaseODISTEff::set( ndxSUPP, tolOD, vOUT, vEFFAP );
+      return **insert_external_operation( *this, 1, vVar.size(), vVar.data(), 1, &maxSUPP );
     }
 
   // Evaluation overloads
@@ -1487,27 +1482,27 @@ public:
 
   // Define operation
   FFVar& operator()
-    ( size_t const idep, size_t const nVar, FFGraph* dag, size_t const ndxSUPP,
-      size_t const maxSUPP, double const& tolOD, std::vector<std::vector<arma::vec>> const* vOUT,
+    ( size_t const idep, size_t const nVar, FFVar const& maxSUPP, size_t const ndxSUPP,
+      double const& tolOD, std::vector<std::vector<arma::vec>> const* vOUT,
       std::vector<double> const* vEFFAP )
     {
 #ifdef MC__FFGRADODISTEFF_CHECK
       assert( idep < nVar && vOUT && vEFFAP );
 #endif
-      FFBaseODISTEff::set( ndxSUPP, maxSUPP, tolOD, vOUT, vEFFAP );
-      return *(insert_external_operation( *this, nVar, dag )[idep]);
+      FFBaseODISTEff::set( ndxSUPP, tolOD, vOUT, vEFFAP );
+      return *(insert_external_operation( *this, nVar, maxSUPP )[idep]);
     }
 
   FFVar** operator()
-    ( size_t const nVar, FFGraph* dag, size_t const ndxSUPP, size_t const maxSUPP,
+    ( size_t const nVar, FFVar const& maxSUPP, size_t const ndxSUPP,
       double const& tolOD, std::vector<std::vector<arma::vec>> const* vOUT,
       std::vector<double> const* vEFFAP )
     {
 #ifdef MC__FFGRADODISTEFF_CHECK
       assert( vOUT && vEFFAP );
 #endif
-      FFBaseODISTEff::set( ndxSUPP, maxSUPP, tolOD, vOUT, vEFFAP );
-      return insert_external_operation( *this, nVar, dag );
+      FFBaseODISTEff::set( ndxSUPP, tolOD, vOUT, vEFFAP );
+      return insert_external_operation( *this, nVar, maxSUPP );
     }
 
   // Evaluation overloads
@@ -1641,7 +1636,7 @@ const
   std::cout << "FFGradODISTEff::eval: FFVar\n";
 #endif
 #ifdef MC__FFGRADODISTEFF_CHECK
-  assert( nRes == nVar );
+  assert( nRes == nVar-1 );
 #endif
 
   FFVar** ppRes = insert_external_operation( *this, nRes, nVar, vVar );;
@@ -1657,19 +1652,22 @@ const
 #ifdef MC__FFODISTEFF_TRACE
   std::cout << "FFODISTEff::eval: double\n";
 #endif
+
+  unsigned const nEFF = nVar-1;
+  double const& maxSUPP = vVar[nEFF];
 #ifdef MC__FFODISTEFF_CHECK
-  assert( _vOUT && !_vOUT->empty() && nRes == 1 && nVar == _vOUT->back().size()-_vEFFAP->size() );
+  assert( _vOUT && !_vOUT->empty() && nRes == 1 && nEFF == _vOUT->back().size()-_vEFFAP->size() );
 #endif
 
   vRes[0] = 0.;
-  size_t e=0;
+  size_t e = 0;
   for( ; e<_vEFFAP->size(); ++e ) // Contributions from prior experiment
     vRes[0] += _ODval( _ndxSUPP, e, _tolOD );
-  for( size_t i=0; i<nVar; ++i, ++e ){ // Contributions from new experiment
+  for( size_t i=0; i<nEFF; ++i, ++e ){ // Contributions from new experiment
     if( e == _ndxSUPP ) continue;
     vRes[0] += vVar[i] * _ODval( _ndxSUPP, e, _tolOD );
   }
-  vRes[0] /= _maxSUPP + _vEFFAP->size() - 1;
+  vRes[0] /= maxSUPP + _vEFFAP->size() - 1;
 
 #ifdef MC__FFODISTEFF_DEBUG
   std::cout << name() << " [" << 0 << "]: " << vRes[0] << std::endl;
@@ -1686,12 +1684,14 @@ const
   std::cout << "FFGradODISTEff::eval: double\n";
 #endif
 #ifdef MC__FFGRADODISTEFF_CHECK
-  assert( _vOUT && !_vOUT->empty() && nRes == _vOUT->back().size()-_vEFFAP->size() && !nVar );
+  assert( _vOUT && !_vOUT->empty() && nRes == _vOUT->back().size()-_vEFFAP->size() && nVar == 1 );
 #endif
 
-  size_t e=_vEFFAP->size();
+  double const& maxSUPP = vVar[0];
+
+  size_t e = _vEFFAP->size();
   for( size_t i=0; i<nRes; ++i, ++e ) // Contributions from new experiment
-    vRes[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) / ( _maxSUPP + _vEFFAP->size() - 1 ) );
+    vRes[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) / ( maxSUPP + _vEFFAP->size() - 1 ) );
 
 #ifdef MC__FFGRADODISTEFF_DEBUG
   for( size_t i=0; i<nRes; ++i )
@@ -1710,33 +1710,24 @@ const
   std::cout << "FFODISTEff::eval: fadbad::F<FFVar>\n";
 #endif
 
+  unsigned const nEFF = nVar-1;
+
   std::vector<FFVar> vVarVal( nVar );
   for( size_t i=0; i<nVar; ++i )
     vVarVal[i] = vVar[i].val();
   vRes[0] = *(insert_external_operation( *this, 1, nVar, vVarVal.data() )[0]);
-  for( size_t i=0; i<nVar; ++i )
+  for( size_t i=0; i<nEFF; ++i )
     vRes[0].setDepend( vVar[i] );
 
-#ifdef MC__FFODISTEFF_USEGRAD
   FFGradODISTEff OpResDer;
-  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _maxSUPP, _tolOD, _vOUT, _vEFFAP );
-  FFVar const*const* ppResDer = insert_external_operation( OpResDer, nVar, vVarVal.at(0).dag() );
-#else
-  std::vector<double> vResDer( nVar ); 
-  size_t e=_vEFFAP->size();
-  for( size_t i=0; i<nVar; ++i, ++e ) // Contributions from new experiment
-    vResDer[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) / ( _maxSUPP + _vEFFAP->size() - 1 ) );
-#endif
+  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _tolOD, _vOUT, _vEFFAP );
+  FFVar const*const* ppResDer = insert_external_operation( OpResDer, nEFF, vVarVal[nEFF] );
 
   for( size_t j=0; j<vRes[0].size(); ++j ){
     vRes[0][j] = 0.;
-    for( size_t i=0; i<nVar; ++i ){
+    for( size_t i=0; i<nEFF; ++i ){
       if( vVar[i][j].cst() && vVar[i][j].num().val() == 0. ) continue;
-#ifdef MC__FFODISTEFF_USEGRAD
       vRes[0][j] += *ppResDer[i] * vVar[i][j];
-#else
-      vRes[0][j] += vResDer[i] * vVar[i][j];
-#endif
     }
   }
 }
@@ -1751,23 +1742,25 @@ const
   std::cout << "FFODISTEff::eval: fadbad::F<double>\n";
 #endif
 
+  unsigned const nEFF = nVar-1;
+  
   std::vector<double> vVarVal( nVar );
   for( size_t i=0; i<nVar; ++i )
     vVarVal[i] = vVar[i].val();
   double ResVal; 
   eval( 1, &ResVal, nVar, vVarVal.data(), nullptr );
   vRes[0] = ResVal;
-  for( size_t i=0; i<nVar; ++i )
+  for( size_t i=0; i<nEFF; ++i )
     vRes[0].setDepend( vVar[i] );
 
   std::vector<double> vResDer( nVar ); 
-  size_t e=_vEFFAP->size();
-  for( size_t i=0; i<nVar; ++i, ++e ) // Contributions from new experiment
+  size_t e = _vEFFAP->size();
+  for( size_t i=0; i<nEFF; ++i, ++e ) // Contributions from new experiment
     vResDer[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) );
 
   for( size_t j=0; j<vRes[0].size(); ++j ){
     vRes[0][j] = 0.;
-    for( size_t i=0; i<nVar; ++i ){
+    for( size_t i=0; i<nEFF; ++i ){
       if( vVar[i][j] == 0. ) continue;
       vRes[0][j] += vResDer[i] * vVar[i][j];
     }
@@ -1783,21 +1776,16 @@ const
   std::cout << "FFODISTEff::deriv\n";
 #endif
 
+  unsigned const nEFF = nVar-1;
 #ifdef MC__FFODISTEFF_CHECK
-  assert( _vOUT && !_vOUT->empty() && nRes == 1 && nVar == _vOUT->back().size()-_vEFFAP->size() );
+  assert( _vOUT && !_vOUT->empty() && nRes == 1 && nEFF == _vOUT->back().size()-_vEFFAP->size() );
 #endif
 
-#ifdef MC__FFODISTEFF_USEGRAD
   FFGradODISTEff OpResDer;
-  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _maxSUPP, _tolOD, _vOUT, _vEFFAP );
-  FFVar const*const* ppResDer = insert_external_operation( OpResDer, nVar, vVar[0].dag() );
+  OpResDer.FFBaseODISTEff::set( _ndxSUPP, _tolOD, _vOUT, _vEFFAP );
+  FFVar const*const* ppResDer = insert_external_operation( OpResDer, nEFF, vVar[nEFF] );
   for( size_t i=0; i<nVar; ++i )
-    vDer[0][i] = *ppResDer[i];
-#else
-  size_t e=_vEFFAP->size();
-  for( size_t i=0; i<nVar; ++i, ++e ) // Contributions from new experiment
-    vDer[0][i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) / ( _maxSUPP + _vEFFAP->size() - 1 ) );
-#endif
+    vDer[0][i] = i<nEFF? *ppResDer[i]: 0;
 }
 
 ////////////////////////////////////////////////////////////////////////
