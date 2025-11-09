@@ -72,7 +72,6 @@ int main()
 
   NS.setup();
   NS.sample();
-
   NS.stats.display();
   
   for( auto const& [lkh,pcon] : NS.live_points() ){

@@ -1,4 +1,5 @@
 //#define MAGNUS__NSFEAS_SAMPLE_DEBUG
+//#define MAGNUS__NSFEAS_EVAL_SERIAL
 #include "parest.hpp"
 
 // The problem of calibrating a temperature-dependent growth rate model
@@ -9,7 +10,7 @@ int main()
 {
 
   mc::FFGraph DAG;  // DAG describing the model
-  DAG.options.MAXTHREAD = 1;
+  DAG.options.MAXTHREAD = 8;
 
   /////////////////////////////////////////////////////////////////////////
   // Define model: Ratkowsky

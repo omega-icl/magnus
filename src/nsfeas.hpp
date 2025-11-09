@@ -195,6 +195,7 @@ public:
         MAXITER    = 0;
         MAXERR     = 0;
         MAXCPU     = 0;
+        MAXTHREAD  = 1;
         DISPLEVEL  = 1;
         DISPITER   = NUMLIVE/10;
       }
@@ -216,6 +217,7 @@ public:
         MAXITER    = options.MAXITER;
         MAXERR     = options.MAXERR;
         MAXCPU     = options.MAXCPU;
+        MAXTHREAD  = options.MAXTHREAD;
         DISPLEVEL  = options.DISPLEVEL;
         DISPITER   = options.DISPITER;
         return *this;
@@ -253,6 +255,8 @@ public:
     size_t                   MAXERR;
     //! @brief maximal walltime
     double                   MAXCPU;
+    //! @brief maximal number of parallel threads
+    size_t                   MAXTHREAD;
     //! @brief display level
     int                      DISPLEVEL;
     //! @brief display frequency
@@ -414,6 +418,7 @@ NSFEAS::setup
   try{
     delete _dag; _dag = new DAG;
     _dag->options = BASE_MBFA::_dag->options;
+    _dag->options.MAXTHREAD = options.MAXTHREAD;
 
     _vCON.resize( _nu );
     _dag->insert( BASE_MBFA::_dag, _nu, BASE_MBFA::_vCON.data(), _vCON.data() );
@@ -467,7 +472,11 @@ NSFEAS::_sample_ini
   size_t const NLIVE0 = _liveFEAS.size();
 
   // Sample nest in parallel
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+  if( _dag->options.MAXTHREAD != 1 ){
+#else
   if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
+#endif
     // Sample new points
     for( size_t s=0; _vCONSAM.size() < NLIVE0 + nprop; ++s ){
       _sample_bounds( os );
@@ -482,7 +491,7 @@ NSFEAS::_sample_ini
     }
 
     // Add new points to live set
-    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){ // to account for failures
+    for( size_t s=0; s<_vVALSAM.size(); ++s, stats.numfct+=(_vPARVAL.size()>0?_vPARVAL.size():1) ){ // to account for failures
       if( !_dag->veval_err().at(s) ){
         _liveFEAS.insert( { DBL_MAX,
                           { _vCONSAM[s].data(), 0., -DBL_MAX } } );
@@ -502,7 +511,7 @@ NSFEAS::_sample_ini
 
   // Sample nest sequentially
   else{
-    for( size_t s=0; _liveFEAS.size() < NLIVE0 + nprop; ++s, ++stats.numfct ){ // to account for failures
+    for( size_t s=0; _liveFEAS.size() < NLIVE0 + nprop; ++s, stats.numfct+=(_vPARVAL.size()>0?_vPARVAL.size():1) ){ // to account for failures
       // Sample new point
       _sample_bounds( os );
       std::vector<double> const& dCON = _vCONSAM.back();
@@ -788,7 +797,11 @@ NSFEAS::_sample_feas
     }
 
     // Evaluate proposals in parallel
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+    if( _dag->options.MAXTHREAD != 1 ){
+#else
     if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
+#endif
       try{
         auto itSAM0 = _vCONSAM.begin(); std::advance( itSAM0, NSAM0 );
         //_vCONPROP.assign( itSAM0, _vCONSAM.end() );
@@ -834,11 +847,15 @@ NSFEAS::_sample_feas
     }
     
     // Update live set
-    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){
+    for( size_t s=0; s<_vVALSAM.size(); ++s, stats.numfct+=(_vPARVAL.size()>0?_vPARVAL.size():1) ){
       _dVAL = _vVALSAM[s];
       std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
       // Check for failure during parallel evaluation
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+      if( _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#else
       if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#endif
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
         std::cout << "Failed "
                   << std::right << std::scientific << std::setprecision(5)
@@ -933,7 +950,11 @@ NSFEAS::_sample_lkh
     }
 
     // Evaluate proposals in parallel
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+    if( _dag->options.MAXTHREAD != 1 ){
+#else
     if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 ){
+#endif
       try{
         auto itSAM0 = _vCONSAM.begin(); std::advance( itSAM0, NSAM0 );
         //_vCONPROP.assign( itSAM0, _vCONSAM.end() );
@@ -979,11 +1000,15 @@ NSFEAS::_sample_lkh
     }
     
     // Update live set
-    for( size_t s=0; s<_vVALSAM.size(); ++s, ++stats.numfct ){
+    for( size_t s=0; s<_vVALSAM.size(); ++s, stats.numfct+=(_vPARVAL.size()>0?_vPARVAL.size():1) ){
       _dVAL = _vVALSAM[s];
       std::vector<double> const& dCON = _vCONSAM[NSAM0+s];
       // Check for failure during parallel evaluation
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+      if( _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#else
       if( _vPARVAL.size() <= 1 && _dag->options.MAXTHREAD != 1 && !_dag->veval_err().at(s) ){
+#endif
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
         std::cout << "Failed "
                   << std::right << std::scientific << std::setprecision(5)
@@ -1086,6 +1111,9 @@ NSFEAS::sample
 #ifdef MAGNUS__NSFEAS_SAMPLE_DEBUG
   _dag->output( _sgVAL );
 #endif
+
+  // Reset parallel worker
+  _wkVAL.clear();
 
   int flag = 1;
   double factor = options.ELLMAG;

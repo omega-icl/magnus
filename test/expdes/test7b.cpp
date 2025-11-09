@@ -18,7 +18,6 @@ int main()
   // Define model
 
   mc::FFGraph DAG;  // DAG describing the model
-  DAG.options.MAXTHREAD = 1; // Use all available CPU cores for DAG evaluation
   
   // Time stages
   size_t const NS = 1;
@@ -198,7 +197,9 @@ int main()
   mc::EXPDES DOE;
   DOE.options.CRITERION = mc::EXPDES::ODIST;
   DOE.options.RISK      = mc::EXPDES::Options::NEUTRAL;//AVERSE;
+  DOE.options.FEASPROP  = 64;
   DOE.options.DISPLEVEL = 1;
+  DOE.options.MAXTHREAD = 0; // Use all available CPU cores for DAG evaluation
   DOE.options.MINLPSLV.DISPLEVEL = 1;
   DOE.options.MINLPSLV.NLPSLV.GRADCHECK = 0;
   DOE.options.MINLPSLV.NLPSLV.OPTIMTOL  = 1e-8;
@@ -207,12 +208,12 @@ int main()
   DOE.options.MINLPSLV.MIPSLV.INTEGRALITYFOCUS = 0;
   DOE.options.MINLPSLV.MIPSLV.INTFEASTOL = 1e-9;
   DOE.options.MINLPSLV.MIPSLV.OUTPUTFILE = "test7b.lp";
-  DOE.options.MINLPSLV.NLPSLV.GRADMETH  = DOE.options.MINLPSLV.NLPSLV.FSYM;
+  DOE.options.MINLPSLV.NLPSLV.GRADMETH  = DOE.options.MINLPSLV.NLPSLV.FAD;//SYM;
   DOE.options.NLPSLV.DISPLEVEL   = 1;
   DOE.options.NLPSLV.GRADCHECK   = 0;
   DOE.options.NLPSLV.GRADLSEARCH = 1;
   DOE.options.NLPSLV.FCTPREC     = 1e-7;
-  DOE.options.NLPSLV.GRADMETH = DOE.options.NLPSLV.FSYM;//FAD;
+  DOE.options.NLPSLV.GRADMETH = DOE.options.NLPSLV.FAD;//SYM;
 
   DOE.set_dag( DAG );
   DOE.set_model( Y ); // YVAR
@@ -223,13 +224,13 @@ int main()
   DOE.set_control( U, ULB, UUB );
 
   // Parametric uncertainty
-  size_t const NPSAM = 64;//128;
   std::vector<double> PLB( NP ), PUB( NP );
   for( size_t i=0; i<NP; ++i ){
     //PLB[i] = PUB[i] = dP[i];
     PLB[i] = dP[i]*0.95e0;  PUB[i] = dP[i]*1.05e0;
   }
   DOE.set_parameter( P, dP );
+  //size_t const NPSAM = 64;//128;
   //DOE.set_parameter( P, DOE.uniform_sample( NPSAM, PLB, PUB ) );
 
 //  DOE.set_constraint( G );
@@ -266,18 +267,19 @@ int main()
     DOE.set_constraint( G );
     DOE.setup();
 
-    size_t NUSAM = 256;
+    size_t NUSAM = 1024;//512;
     DOE.sample_support( NUSAM );
 
     // Design a campaign with 4*4 experiments
     size_t const NEXP = 16;
     //DOE.combined_solve( NEXP );
+    //std::cout << "\nSTARTING EFFORT SOLVE\n";
     DOE.effort_solve( {NEXP/4, NEXP/4, NEXP/4, NEXP/4} );
     //DOE.effort_solve( NEXP );
     DOE.gradient_solve( DOE.effort() );
 //    DOE.file_export( "test7b_N="+std::to_string(NEXP)+"_"+std::to_string(NUSAM) );
     DOE.stats.display();
-//  
+  
 //    auto campaign1 = DOE.campaign();
 //    DOE.evaluate_design( campaign1, "ODIST" );
 

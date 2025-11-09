@@ -12,6 +12,8 @@
 #include "base_mbfa.hpp"
 #include "ffdep.hpp"
 
+#undef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+
 namespace mc
 {
 
@@ -310,9 +312,15 @@ const
     else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[0], _FPAR, _DPAR->at(0), _FCON, _DCON, _FCST, *_DCST );
   }
   else{
-    //std::cout << "using veval in FFNSamp\n";
+#ifndef MAGNUS__NSFEAS_THREAD_FOREACH_SAMPLE
+    for( size_t s=0; s<_ns; ++s ){
+      if( !_nc ) _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[s], _FPAR, _DPAR->at(s), _FCON, _DCON );
+      else       _DAG->eval( _sgFCT, _wkD, _FFCT, _DFCT[s], _FPAR, _DPAR->at(s), _FCON, _DCON, _FCST, *_DCST );
+    }
+#else
     if( !_nc ) _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, _FPAR, *_DPAR, _FCON, _DCON );
     else       _DAG->veval( _sgFCT, _wkD, _wkThd, _FFCT, _DFCT, _FPAR, *_DPAR, _FCON, _DCON, _FCST, *_DCST );
+#endif
   }
 #ifdef MC__FFNSAMP_DEBUG
   for( size_t s=0; s<(_ns?_ns:1); ++s )

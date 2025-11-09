@@ -333,7 +333,7 @@ public:
 
   //! @brief Return covariance for given parameter sample
   arma::mat cov_sample
-    ( arma::mat PARSam, std::ostream& os=std::cout )
+    ( arma::mat const& PARSam, std::ostream& os=std::cout )
     const;
 
   //! @brief Compute covariance matrix using linearization (Wald)
@@ -1323,7 +1323,7 @@ const
 inline
 arma::mat
 PAREST::cov_sample
-( arma::mat PARSam, std::ostream& os )
+( arma::mat const& PARSam, std::ostream& os )
 const
 {
   if( !PARSam.n_rows ) return arma::mat();

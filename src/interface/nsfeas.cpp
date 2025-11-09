@@ -22,6 +22,10 @@ pyNSFEAS
    "options",
    &NSFEAS::options
  )
+ .def_readwrite( 
+   "stats",
+   &NSFEAS::stats
+ )
  .def(
    "setup",
    []( NSFEAS& self )
@@ -182,6 +186,7 @@ pyNSFEASOptions
  .def_readwrite( "MAXITER",   &NSFEAS::Options::MAXITER,   "maximal number of iterations [Default: 0]" )
  .def_readwrite( "MAXERR",    &NSFEAS::Options::MAXERR,    "maximal number of failed evaluations [Default: 0]" )
  .def_readwrite( "MAXCPU",    &NSFEAS::Options::MAXCPU,    "maximal walltime [Default: 0]" )
+ .def_readwrite( "MAXTHREAD", &NSFEAS::Options::MAXTHREAD, "maximal number of threads [Default: 1]" )
  .def_readwrite( "DISPLEVEL", &NSFEAS::Options::DISPLEVEL, "display level [Default: 1]" )
  .def_readwrite( "DISPITER",  &NSFEAS::Options::DISPITER,  "display frequency [Default: 25]" )
 ;
@@ -190,6 +195,34 @@ py::enum_<mc::NSFEAS::Options::TYPE>( pyNSFEASOptions, "TYPE" )
  .value( "VAR",  mc::NSFEAS::Options::TYPE::VAR,  "value-at-risk, VaR" )
  .value( "CVAR", mc::NSFEAS::Options::TYPE::CVAR, "conditional value-at-risk, CVaR" )
  .export_values()
+;
+
+py::class_<NSFEAS::Stats> pyNSFEASStats( pyNSFEAS, "Stats" );
+
+pyNSFEASStats
+ .def(
+   py::init<>()
+ )
+ .def(
+   "reset",
+   []( NSFEAS::Stats& self )
+     { self.reset(); },
+   "reset stats"
+ )
+ .def(
+   "display",
+   []( NSFEAS::Stats& self ){
+     py::scoped_ostream_redirect stream(
+       std::cout,                                // std::ostream&
+       py::module_::import("sys").attr("stdout") // Python output
+     );
+     self.display(); },
+   "reset stats"
+ )
+ .def_readwrite( "iter",    &NSFEAS::Stats::iter,    "iteration count" )
+ .def_readwrite( "numfct",  &NSFEAS::Stats::numfct,  "function evaluation count" )
+ .def_readwrite( "numerr",  &NSFEAS::Stats::numerr,  "failed evaluation count" )
+ .def_readwrite( "numfeas", &NSFEAS::Stats::numfeas, "feasible point count" )
 ;
 
 }

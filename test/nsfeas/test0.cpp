@@ -58,7 +58,6 @@ int main()
 
   NS.setup();
   NS.sample();// { GL, GU } );
-
   NS.stats.display();
 
   for( auto const& [feas,point] : NS.live_points() ){

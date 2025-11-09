@@ -1592,6 +1592,7 @@ const
 #endif
 
   double Dist = 0.;
+  // Loop over model parameter scenarios
   for( size_t j=0; j<_vOUT->size(); ++j ){
 #ifdef MC__FFODISTEFF_DEBUG
       std::cout << "y[" << e1 << "][" << j << "] = " << _vOUT->at(j).at(e1);
@@ -1743,6 +1744,10 @@ const
 #endif
 
   unsigned const nEFF = nVar-1;
+  double const& maxSUPP = vVar[nEFF].val();
+#ifdef MC__FFODISTEFF_CHECK
+  assert( _vOUT && !_vOUT->empty() && nRes == 1 && nEFF == _vOUT->back().size()-_vEFFAP->size() );
+#endif
   
   std::vector<double> vVarVal( nVar );
   for( size_t i=0; i<nVar; ++i )
@@ -1756,8 +1761,8 @@ const
   std::vector<double> vResDer( nVar ); 
   size_t e = _vEFFAP->size();
   for( size_t i=0; i<nEFF; ++i, ++e ) // Contributions from new experiment
-    vResDer[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) );
-
+    vResDer[i] = ( e==_ndxSUPP? 0.: _ODval( _ndxSUPP, e, _tolOD ) / ( maxSUPP + _vEFFAP->size() - 1 ) );
+    
   for( size_t j=0; j<vRes[0].size(); ++j ){
     vRes[0][j] = 0.;
     for( size_t i=0; i<nEFF; ++i ){

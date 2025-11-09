@@ -187,6 +187,7 @@ public:
         MINDIST                     = 1e-6;
         MAXITER                     = 4;
         TOLITER                     = 1e-4;
+        MAXTHREAD                   = 1;
         DISPLEVEL                   = 1;
         NLPSLV.reset();
 #ifdef MC__USE_SNOPT
@@ -245,6 +246,7 @@ public:
         MINDIST     = options.MINDIST;
         MAXITER     = options.MAXITER;
         TOLITER     = options.TOLITER;
+        MAXTHREAD   = options.MAXTHREAD;
         DISPLEVEL   = options.DISPLEVEL;
         MINLPSLV    = options.MINLPSLV;
         NLPSLV      = options.NLPSLV;
@@ -277,6 +279,8 @@ public:
     int                      MAXITER;
    //! @brief Stopping tolerance for effort-based and gradient-based iteration
     double                   TOLITER;
+   //! @brief Maximal number of parallel threads
+    size_t                   MAXTHREAD;
     //! @brief Verbosity level
     int                      DISPLEVEL;
     
@@ -667,7 +671,9 @@ EXPDES::_setup_out
 
   delete _dag; _dag = new DAG;
   _dag->options = BASE_MBDOE::_dag->options;
-
+  _dag->options.MAXTHREAD = options.MAXTHREAD;
+  _wkOUT.clear();
+  
   _vCON.resize( _nu );
   _dag->insert( BASE_MBDOE::_dag, _nu, BASE_MBDOE::_vCON.data(), _vCON.data() );
   _vPAR.resize( _np );
@@ -714,7 +720,9 @@ EXPDES::_setup_fim
   if( BASE_MBDOE::_dag ) std::cout << *BASE_MBDOE::_dag;
 #endif
   _dag->options = BASE_MBDOE::_dag->options;
-
+  _dag->options.MAXTHREAD = options.MAXTHREAD;
+  _wkFIM.clear();
+    
   _vCON.resize( _nu );
   _dag->insert( BASE_MBDOE::_dag, _nu, BASE_MBDOE::_vCON.data(), _vCON.data() );
   _vPAR.resize( _np );
@@ -784,7 +792,8 @@ EXPDES::_sample_support_nsfeas
   NSFEAS::options.FEASTHRES = options.FEASTHRES;
   NSFEAS::options.NUMPROP   = options.FEASPROP;
   NSFEAS::options.NUMLIVE   = NSAM;
-
+  NSFEAS::options.MAXTHREAD = options.MAXTHREAD;
+  
   NSFEAS::setup();
   if( NSFEAS::sample( _vCSTVAL, true, os ) != NSFEAS::STATUS::NORMAL
    || NSFEAS::_liveFEAS.size() < NSAM )
@@ -1314,7 +1323,7 @@ EXPDES::combined_solve
   std::map<size_t,double> const& EIni, std::ostream& os )
 {
   _EOpt = EIni;
-  double VLast;
+  double VLast = 0.;
   int flag = -33;
   
   for( int it=0; ; ){
@@ -1530,6 +1539,7 @@ EXPDES::effort_solve
       break;
   }
   
+  std::cout << "\nSTARTING MINLP SET-UP\n";
   doe.setup();
   
   bool first = true;
@@ -1555,6 +1565,7 @@ EXPDES::effort_solve
     }
     first = false;
 
+    std::cout << "\nSTARTING MINLP OPTIMIZATION\n";
     //doe.optimize( E0.data(), EBND.data(), &DNEXP );
     //doe.optimize( E0.data(), EBND.data(), &DNEXP, effort_apportion );
     doe.optimize( E0.data(), EBND.data(), &DNEXP, effort_rounding );

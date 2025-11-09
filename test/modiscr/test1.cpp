@@ -114,7 +114,7 @@ int main()
 
   std::vector<double> DP1 = { 0e0, 1e0 };
   PE1.mle_solve( DP1 );
-  PE1.cov_bootstrap( prior_meas, NSAM );
+  PE1.bootstrap_sample( prior_meas, NSAM );
 
   // Parameter estimation in model #2
   mc::PAREST PE2;
@@ -128,12 +128,12 @@ int main()
 
   std::vector<double> DP2 = { 0e0, 0e0, 0e0, 1e0 };
   PE2.mle_solve( DP2 );
-  PE2.cov_bootstrap( prior_meas, NSAM );
+  PE2.bootstrap_sample( prior_meas, NSAM );
 
   // List of parameter samples from joint confidence region
   std::list<std::vector<double>> PSAM;
-  arma::mat const& CRSAM1 = PE1.crsam().t();
-  arma::mat const& CRSAM2 = PE2.crsam().t();
+  arma::mat const& CRSAM1 = PE1.par_sample().t();
+  arma::mat const& CRSAM2 = PE2.par_sample().t();
   for( size_t isam=0; isam<NSAM; ++isam ){
     std::vector<double> rec;
     rec.insert( rec.end(), CRSAM1.colptr(isam), CRSAM1.colptr(isam)+NP1 );

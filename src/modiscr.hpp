@@ -802,7 +802,7 @@ MODISCR::combined_solve
   std::map<size_t,double> const& EIni, std::ostream& os )
 {
   _EOpt = EIni;
-  double VLast;
+  double VLast = 0.;
   int flag = -33;
   
   for( int it=0; ; ){
