@@ -16,6 +16,6 @@ test% : test%.o
 #####
 
 clean:
-	rm -f test? test?b
+	rm -f test? test??
 	rm -f *.o *.out *.dat *.eps *.dot *.svg *.log *~
 
