@@ -30,9 +30,6 @@ class BASE_MBDOE
 {
 protected:
 
-  using BASE_MBFA::set_parameter;
-
-
   //! @brief Size of model candidates
   size_t _nm;
 
