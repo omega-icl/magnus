@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <armadillo>
 
 #include "base_mbdoe.hpp"
@@ -1104,7 +1105,7 @@ const
         BRval( j, k, vRes[0] );
 
 #ifdef MC__FFBRCRIT_LOG
-  vRes[0] = std::log( vRes[0] );
+  vRes[0] = std::log( std::max( vRes[0], std::numeric_limits<double>::min() ) );
 #endif
 
 #ifdef MC__FFBREFF_DEBUG
@@ -1198,7 +1199,7 @@ const
 #endif
 
 #ifdef MC__FFBRCRIT_LOG
-  GradBR /= BRCrit;
+  if( BRCrit > std::numeric_limits<double>::min() ) GradBR /= BRCrit;
 #endif
 
 #ifdef MC__FFBREFF_DEBUG
@@ -4428,7 +4429,7 @@ const
         BRappend( j, k, BR );
 
 #ifdef MC__FFBRCRIT_LOG
-  BR = std::log( BR );
+  BR = std::log( std::max( BR, std::numeric_limits<double>::min() ) );
 #endif
 
 #ifdef MC__FFBRCRIT_DEBUG
@@ -4599,7 +4600,7 @@ const
 #endif
 
 #ifdef MC__FFBRCRIT_LOG
-  gradBR /= BR;
+  if( BR > std::numeric_limits<double>::min() ) gradBR /= BR;
 #endif
 
 #ifdef MC__FFGRADBRCRIT_DEBUG
@@ -5335,7 +5336,7 @@ const
     for( size_t k=j+1; k<_nm; ++k )
       BRappend( j, k, BR );
 #ifdef MC__FFBRCRIT_LOG
-  BR = std::log( BR );
+  BR = std::log( std::max( BR, std::numeric_limits<double>::min() ) );
 #endif
 
 #ifdef MC__FFBRMMCRIT_DEBUG
@@ -5468,7 +5469,7 @@ const
 #endif
 #ifdef MC__FFBRCRIT_LOG
   //std::cout << "BR = " << std::log( BR ) << std::endl;
-  gradBR /= BR;
+  if( BR > std::numeric_limits<double>::min() ) gradBR /= BR;
 #endif
 
 #ifdef MC__FFBRMMCRIT_DEBUG
