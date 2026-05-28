@@ -375,7 +375,7 @@ BASE_MBDOE::effort_rounding
 
   std::vector<double> intval( n );
   for( unsigned i=0; i<n; ++i ){
-    if( !typ[i] ) continue;
+    if( !typ[i] || val[i] < TOLZERO ) continue;
     intval[i] = std::ceil( (1.-supp/(2*sum)) * val[i] );
   }
 
