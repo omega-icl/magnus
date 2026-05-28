@@ -1319,22 +1319,25 @@ MODISCR::gradient_solve
        << std::endl;
 
   if( update ){
-    _SOpt.clear();
-    _VOpt = 0./0.;
- 
     if( doeref.get_status() == NLP::SUCCESSFUL
      || doeref.get_status() == NLP::FAILURE
      || doeref.get_status() == NLP::INTERRUPTED ){
+      std::map<size_t,std::vector<double>> SOpt;
       double const* dC = doeref.solution().x.data();
       for( auto const& [ndx,eff] : EOpt ){
-        _SOpt[ndx] = std::vector<double>( dC, dC+_nu );
+        SOpt[ndx] = std::vector<double>( dC, dC+_nu );
         dC += _nu;
       }
-      _update_supports( _EOpt, _SOpt, os );
+      _update_supports( EOpt, SOpt, os );
       _VOpt = doeref.solution().f[0];
       size_t const NEXTRA = doeref.solution().x.size() - NUTOT;
       if( NEXTRA > 0 )
         _ROpt.assign( dC, dC+NEXTRA );
+    }
+    else{
+      _EOpt.clear();
+      _SOpt.clear();
+      _VOpt = 0./0.;
     }
   }
 
