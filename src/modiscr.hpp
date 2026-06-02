@@ -1069,9 +1069,9 @@ MODISCR::_evaluate_BRAverse
   // Evaluate cost function
   _dagdoe->eval( FBR, DBR, UTOT, UTOT0 );
 
-  std::map<double,double> SA;
+  std::multimap<double,double> SA;
   for( size_t s=0; s<NUNC; ++s )
-    SA[ DBR[s] ] = _vPARWEI[s];
+    SA.insert( { DBR[s], _vPARWEI[s] } );
 
   double prsum = 0., VaR = 0.;
   for( auto const& [BR,pr] : SA ){
