@@ -212,6 +212,7 @@ public:
       BADCONST,     //!< Unspecified constants
       NOMODEL,	    //!< Unspecified model
       NODATA,	    //!< Unspecified data
+      NORESULTS,    //!< No estimation results available
       INTERN=-33    //!< Internal error
     };
     //! @brief Constructor for error <a>ierr</a>
@@ -231,6 +232,8 @@ public:
           return "PAREST::Exceptions  Unspecified model";
         case NODATA:
           return "PAREST::Exceptions  Unspecified data";
+        case NORESULTS:
+          return "PAREST::Exceptions  No estimation results available";
         case INTERN:
         default:
           return "PAREST::Exceptions  Internal error";
@@ -1062,7 +1065,10 @@ std::tuple<double,double,double>
 PAREST::chi2_test
 ( double const& conf, std::ostream& os )
 {
-  return _chi2_test( conf, _PAREst.x, _PAREst.p, options.DISPLEVEL, os );
+  if( !_PAREst.x.empty() )
+    return _chi2_test( conf, _PAREst.x, _PAREst.p, options.DISPLEVEL, os );
+  else
+    throw Exceptions( Exceptions::NORESULTS );
 }
 
 inline
@@ -1070,7 +1076,7 @@ std::tuple<double,double,double>
 PAREST::chi2_test
 ( double const& conf, std::vector<double> const& P0, std::vector<double> const& C0, std::ostream& os )
 {
-  return _chi2_test( conf, _PAREst.x, _PAREst.p, options.DISPLEVEL, os );
+  return _chi2_test( conf, P0, C0, options.DISPLEVEL, os );
 }
 
 inline
@@ -1079,6 +1085,7 @@ PAREST::_chi2_test
 ( double const& conf, std::vector<double> const& P0, std::vector<double> const& C0, 
   int const disp, std::ostream& os )
 {
+  if( P0.size() != _np ) throw Exceptions( Exceptions::BADSIZE );
   double Chi2Val = 0./0.;
   chi_squared dist( _nd-_np );
   double Chi2Crit = quantile( dist, conf );
