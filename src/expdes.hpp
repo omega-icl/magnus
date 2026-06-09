@@ -959,7 +959,7 @@ EXPDES::_sample_select
 {
   std::vector<std::pair<size_t,double>> BRall( _vOUTSAM.size()-1 );
   std::vector<std::pair<size_t,double>> BRtop( std::round(-options.UNCREDUC) );
-  int DISPFREQ = (_vOUTSAM.size()-start)/20;
+  int DISPFREQ = (_vOUTSAM.size()-start > 20? (_vOUTSAM.size()-start)/20: 1);
 
   for( size_t j=start; j<_vOUTSAM.size(); j+=inc ){
 
@@ -1051,7 +1051,7 @@ EXPDES::_sample_fim
 ( size_t const NSAM, std::ostream& os )
 {
   auto&& tstart = stats.start();
-  int DISPFREQ = (_ne0+NSAM)/20;
+  int DISPFREQ = (_ne0+NSAM > 20? (_ne0+NSAM)/20: 1);
   if( options.DISPLEVEL )
     os << "** GENERATING SUPPORT SAMPLES     |" << std::flush;
 
