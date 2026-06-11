@@ -125,9 +125,10 @@ int main()
   PE.setup();
   PE.mle_solve( DPNOM );
   //PE.mle_solve( 10 );
-  auto MLEOPT   = PE.mle();
+  auto MLEOPT   = PE.par_best();
   auto CHI2TEST = PE.chi2_test( 0.95 );
-  auto BCOV     = PE.cov_bootstrap( 100 );
+  PE.bootstrap_sample( 100 );
+  auto BCOV     = PE.cov_sample();
   auto LCOV     = PE.cov_linearized();
   auto CINTT    = PE.conf_interval( LCOV, 0.95, "T" );
   auto CELLF    = PE.conf_ellipsoid( LCOV, 0, 1, 0.95, "F" );

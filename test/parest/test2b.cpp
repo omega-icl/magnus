@@ -154,9 +154,10 @@ int main()
   PE.setup();
   PE.mle_solve( P0, C0 );
   //PE.mle_solve( 10, C0 );
-  auto MLEOPT   = PE.mle();
+  auto MLEOPT   = PE.par_best();
   auto CHI2TEST = PE.chi2_test( 0.95 );
-  //auto BCOV     = PE.cov_bootstrap( 200 );
+  //PE.bootstrap_sample( 200 );
+  //auto BCOV     = PE.cov_sample();
   //auto LCOV     = PE.cov_linearized();
   //auto CINTT    = PE.conf_interval( LCOV, 0.95, "T" );
   //auto CELLF    = PE.conf_ellipsoid( LCOV, 0, 1, 0.95, "F" );
@@ -215,7 +216,7 @@ int main()
   PE.setup();
   PE.mle_solve( P0, C0 );
   //PE.mle_solve( 10, C0 );
-  auto MLEOPT2   = PE.mle();
+  auto MLEOPT2   = PE.par_best();
   auto CHI2TEST2 = PE.chi2_test( 0.95 );
 
   return 0;
