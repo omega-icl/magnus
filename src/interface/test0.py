@@ -48,7 +48,7 @@ PE.options.DISPLEVEL = 1
 PE.options.NLPSLV.DISPLEVEL   = 0;
 PE.options.NLPSLV.GRADCHECK   = 0;
 PE.options.NLPSLV.MAXTHREAD   = 0;
-PE.options.NLPSLV.GRADMETH    = PE.options.NLPSLV.FSYM 
+PE.options.NLPSLV.GRADMETH    = PE.options.NLPSLV.FSYM
 
 PE.set_dag( DAG )
 PE.add_model( [Y], [T], 0 ) # submodel 0
@@ -75,4 +75,3 @@ print( cint95 )
 
 cell95_Tmin_Tmax = PE.conf_ellipsoid( cov, 0, 1, 0.95, "F", 50 )
 print( cell95_Tmin_Tmax )
-

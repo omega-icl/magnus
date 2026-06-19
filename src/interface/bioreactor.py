@@ -14,9 +14,9 @@
 #                 I(I_0,X,z) \coloneqq\ & I_0 \exp\left(-(\epsilon_0+\epsilon_X X)z\right)
 # \end{align}$$
 # where $N$ (mg L$^{-1}$) is the culture nitrate concentration; $X$ (g L$^{-1}$), the biomass concentration; $q$ (mg g$^{-1}$), the nitrogen quota; and $f$ [mg g$^{-1}$], the FAME quota.
-# 
+#
 # The bubble column is illuminated on one side only and assimilated to a column with square cross-section of width $H=4.4$ cm. Guesses and ranges for the model parameters are reported in the table below.
-# 
+#
 # Parameter | Guess | Units | Range |   | Parameter | Guess | Units | Range
 # :-------- | ----: | :---- | :---- | - | :-------- | ----: | :---- | :----
 # $\mu_m$      | $0.36$  | $\rm h^{-1}$                  | $[0.3,1]$  || $\gamma_q$   | $6.69$   | $\rm g\,mg^{-1}$ |  $[4,15]$
@@ -26,8 +26,8 @@
 # $k_N$        | $0.80$  | $\rm mg\,L^{-1}$              | $[0.2,2]$  || $\delta$     | $9.90$   | $-$              |  $[5,20]$
 # $k_I$        | $91.2$  | $\rm \mu mol\,m^{-2}\,s^{-1}$ | $[50,200]$ || $Y_0$        | $-0.456$ | $-$              |  $[-2,2]$
 # $k'_I$       | $100.0$ | $\rm \mu mol\,m^{-2}\,s^{-1}$ | $[80,250]$ || $\epsilon_0$ | $0.00$   | $\rm m^{-1}$ |  $[0,50]$
-# $\epsilon_X$ | $196.4$ | $\rm L\,kg^{-1}\,m^{-1}$      | $[50,300]$ | $\qquad\qquad$ 
-# 
+# $\epsilon_X$ | $196.4$ | $\rm L\,kg^{-1}\,m^{-1}$      | $[50,300]$ | $\qquad\qquad$
+#
 
 # In[1]:
 
@@ -532,7 +532,3 @@ cint95 = PE.conf_interval( cov1, 0.95, "T" )
 
 
 # In[ ]:
-
-
-
-
