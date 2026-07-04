@@ -5093,10 +5093,9 @@ FFBRCrit::eval(unsigned const nRes, fadbad::F<double>* vRes,
 
   std::vector<double> vVarVal(nVar);
   for (size_t i = 0; i < nVar; ++i) vVarVal[i] = vVar[i].val();
-  double ResVal(0.);
-  eval(1, &ResVal, nVar, vVarVal.data(), nullptr);
-  vRes[0] = ResVal;
-  for (size_t i = 0; i < nVar; ++i) vRes[0].setDepend(vVar[i]);
+  // eval(double) writes all nRes results, so the buffer must be nRes-wide
+  std::vector<double> vResVal(nRes);
+  eval(nRes, vResVal.data(), nVar, vVarVal.data(), nullptr);
 
   FFGradBRCrit OpResDer;
   OpResDer.set(_DAG, _FPAR, _FCST, _FCON, _FOUT, _FCTR, _EFF, _DPAR, _DCST,
@@ -5105,6 +5104,8 @@ FFBRCrit::eval(unsigned const nRes, fadbad::F<double>* vRes,
   OpResDer.eval(nRes * nVar, vResDer.data(), nVar, vVarVal.data(), nullptr);
   for (size_t k = 0; k < nRes; ++k)
   {
+    vRes[k] = vResVal[k];
+    for (size_t i = 0; i < nVar; ++i) vRes[k].setDepend(vVar[i]);
     for (size_t j = 0; j < vRes[k].size(); ++j)
     {
       vRes[k][j] = 0.;
