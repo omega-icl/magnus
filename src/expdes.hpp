@@ -106,8 +106,9 @@ class EXPDES : public virtual BASE_MBDOE, protected virtual NSFEAS
   //! @brief local copy of experimental controls
   std::vector<FFVar> _vCON;
 
-  //! @brief vector of experimental control samples
-  std::vector<std::vector<double>> _vCONSAM;
+  //! @brief DOE support samples, brought into scope to hide the unrelated
+  //! NSFEAS::_vCONSAM nested-sampling buffer of the same name
+  using BASE_MBDOE::_vCONSAM;
 
   //! @brief local copy of model outputs
   std::vector<FFVar> _vOUT;
@@ -852,7 +853,11 @@ EXPDES::sample_support(size_t const NSAM, std::vector<double> const& vcst,
   if (_nc && _vCSTVAL.empty()) throw Exceptions(Exceptions::BADCONST);
 
   // Control samples
-  if (!_ng)
+  if (!_vCONSAMfile.first.empty())
+  {
+    if (!_read_support_file(NSAM, os)) return false;
+  }
+  else if (!_ng)
     uniform_sample(_vCONSAM, NSAM, _vCONLB, _vCONUB);
   else if (!_sample_support_nsfeas(NSAM, os))
     return false;

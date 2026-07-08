@@ -13,6 +13,9 @@
 #include <boost/random/sobol.hpp>
 #include <boost/random/uniform_01.hpp>
 #include <boost/random/variate_generator.hpp>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include "base_mbfa.hpp"
 #include "ffunc.hpp"
@@ -55,6 +58,17 @@ class BASE_MBDOE : public virtual BASE_MBFA
 
   //! @brief vector of prior experimental effort values
   std::vector<double> _vEFFAP;
+
+  //! @brief vector of experimental control samples
+  std::vector<std::vector<double>> _vCONSAM;
+
+  //! @brief file (name and column delimiter) to load support samples from
+  std::pair<std::string, char> _vCONSAMfile;
+
+  //! @brief Load support samples from <a>_vCONSAMfile</a> into
+  //! <a>_vCONSAM</a> (one support per row, one control per column), checking
+  //! that the file holds <a>NSAM</a> supports of dimension <a>_nu</a>
+  bool _read_support_file(size_t const NSAM, std::ostream& os = std::cout);
 
  public:
   //! @brief Enumeration type for optimality criterion
@@ -267,6 +281,21 @@ class BASE_MBDOE : public virtual BASE_MBFA
     return C;
   }
 
+  //! @brief Register file <a>name</a> (with column delimiter <a>delim</a>) to
+  //! load support samples from; the samples are read later, from within
+  //! sample_support
+  void
+  read_support_file(std::string const& name, char const delim = ',')
+  {
+    _vCONSAMfile = {name, delim};
+  }
+
+  //! @brief Write current support samples <a>_vCONSAM</a> to file <a>name</a>
+  //! (one support per row, one control per column) using column delimiter
+  //! <a>delim</a>
+  bool write_support_file(std::string const& name, char const delim = ',',
+                          std::ostream& os = std::cout) const;
+
   //! @brief Round fractional experimental efforts to nearest integer
   static void effort_rounding(unsigned const n, unsigned const* typ,
                               double* val);
@@ -283,6 +312,79 @@ class BASE_MBDOE : public virtual BASE_MBFA
   void reset_loglikelihood()                          = delete;
   std::vector<FFVar> const& var_loglikelihood() const = delete;
 };
+
+inline bool
+BASE_MBDOE::_read_support_file(size_t const NSAM, std::ostream& os)
+{
+  auto const& [name, delim] = _vCONSAMfile;
+
+  std::ifstream ifile(name);
+  if (!ifile.is_open())
+  {
+    os << "Error: could not open support sample file '" << name << "'"
+       << std::endl;
+    return false;
+  }
+
+  _vCONSAM.clear();
+  std::string line;
+  while (std::getline(ifile, line))
+  {
+    if (line.empty()) continue;
+    std::vector<double> supp;
+    std::stringstream ss(line);
+    std::string cell;
+    while (std::getline(ss, cell, delim))
+    {
+      if (cell.empty()) continue;
+      supp.push_back(std::stod(cell));
+    }
+    _vCONSAM.push_back(std::move(supp));
+  }
+
+  // Basic dimension checks on the imported supports
+  if (_vCONSAM.size() != NSAM)
+  {
+    os << "Error: support sample file '" << name << "' holds "
+       << _vCONSAM.size() << " supports, expected " << NSAM << std::endl;
+    return false;
+  }
+  for (auto const& supp : _vCONSAM)
+    if (supp.size() != _nu)
+    {
+      os << "Error: support sample file '" << name << "' holds a support with "
+         << supp.size() << " controls, expected " << _nu << std::endl;
+      return false;
+    }
+
+  return true;
+}
+
+inline bool
+BASE_MBDOE::write_support_file(std::string const& name, char const delim,
+                               std::ostream& os) const
+{
+  std::ofstream ofile(name);
+  if (!ofile.is_open())
+  {
+    os << "Error: could not open support sample file '" << name << "'"
+       << std::endl;
+    return false;
+  }
+
+  ofile << std::scientific << std::setprecision(8);
+  for (auto const& supp : _vCONSAM)
+  {
+    for (size_t i = 0; i < supp.size(); ++i)
+    {
+      if (i) ofile << delim;
+      ofile << supp[i];
+    }
+    ofile << "\n";
+  }
+
+  return true;
+}
 
 inline void
 BASE_MBDOE::effort_apportion(unsigned const n, unsigned const* typ, double* val)

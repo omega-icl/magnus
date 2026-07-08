@@ -217,7 +217,27 @@ mc_base(py::module_& m)
              std::list<std::pair<double, std::vector<double>>> const& C)
           { self.add_prior_campaign(C); },
           "add to prior campaign: [ {effort0, [experiment0]}, {effort1, "
-          "[experiment1]}, ... ]");
+          "[experiment1]}, ... ]")
+      .def(
+          "read_support_file",
+          [](BASE_MBDOE& self, std::string const& name, char const delim)
+          { self.read_support_file(name, delim); }, py::arg("name"),
+          py::arg("delim") = ',',
+          "register file (name, column delimiter) to load support samples from "
+          "during sample_support")
+      .def(
+          "write_support_file",
+          [](BASE_MBDOE const& self, std::string const& name, char const delim)
+          {
+            py::scoped_ostream_redirect stream(
+                std::cout,                                 // std::ostream&
+                py::module_::import("sys").attr("stdout")  // Python output
+            );
+            return self.write_support_file(name, delim);
+          },
+          py::arg("name"), py::arg("delim") = ',',
+          "write current support samples to file (name, column delimiter), one "
+          "support per row, one control per column");
 
   py::enum_<BASE_MBDOE::TYPE>(pyMBDOE, "TYPE")
       .value("AOPT", BASE_MBDOE::TYPE::AOPT, "A optimality")

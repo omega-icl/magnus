@@ -103,9 +103,6 @@ class MODISCR : public virtual BASE_MBDOE
   //! @brief local copy of experimental controls
   std::vector<FFVar> _vCON;
 
-  //! @brief vector of experimental control samples
-  std::vector<std::vector<double>> _vCONSAM;
-
   //! @brief local copy of model outputs
   std::vector<std::vector<FFVar>> _vOUT;
 
@@ -586,19 +583,26 @@ MODISCR::sample_support(size_t const NSAM, std::vector<double> const& vcst,
   if (_nc && _vCSTVAL.empty()) throw Exceptions(Exceptions::BADCONST);
 
   // Control samples
-  typedef boost::random::sobol_engine<boost::uint_least64_t, 64u> sobol64;
-  typedef boost::variate_generator<sobol64, boost::uniform_01<double>> qrgen;
-  sobol64 eng(_nu);
-  qrgen gen(eng, boost::uniform_01<double>());
-  gen.engine().seed(0);
-
-  _vCONSAM.clear();
-  _vCONSAM.reserve(NSAM);
-  for (size_t s = 0; s < NSAM; ++s)
+  if (!_vCONSAMfile.first.empty())
   {
-    _vCONSAM.push_back(std::vector<double>(_nu));
-    for (size_t i = 0; i < _nu; i++)
-      _vCONSAM.back()[i] = _vCONLB[i] + (_vCONUB[i] - _vCONLB[i]) * gen();
+    if (!_read_support_file(NSAM, os)) return false;
+  }
+  else
+  {
+    typedef boost::random::sobol_engine<boost::uint_least64_t, 64u> sobol64;
+    typedef boost::variate_generator<sobol64, boost::uniform_01<double>> qrgen;
+    sobol64 eng(_nu);
+    qrgen gen(eng, boost::uniform_01<double>());
+    gen.engine().seed(0);
+
+    _vCONSAM.clear();
+    _vCONSAM.reserve(NSAM);
+    for (size_t s = 0; s < NSAM; ++s)
+    {
+      _vCONSAM.push_back(std::vector<double>(_nu));
+      for (size_t i = 0; i < _nu; i++)
+        _vCONSAM.back()[i] = _vCONLB[i] + (_vCONUB[i] - _vCONLB[i]) * gen();
+    }
   }
 
   // Observation samples
