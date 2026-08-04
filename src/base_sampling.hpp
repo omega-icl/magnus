@@ -13,6 +13,8 @@
 #include <boost/random/uniform_01.hpp>
 #include <boost/random/variate_generator.hpp>
 #include <iterator>
+#include <list>
+#include <vector>
 
 namespace mc
 {

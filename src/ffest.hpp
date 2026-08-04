@@ -10,6 +10,7 @@
 #include <iomanip>
 
 #include "base_parest.hpp"
+#include "slift.hpp"
 
 #define MC__FFBRCRIT_LOG
 #undef MC__FFDCRIT_EIG
